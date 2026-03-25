@@ -1,0 +1,7 @@
+streamlit
+pandas
+langchain-mistralai
+langchain-experimental
+azure-storage-blob
+matplotlib
+seaborn
