@@ -31,7 +31,6 @@ class AgentState(TypedDict):
 # ═══════════════════════════════════════════════════════════════════════
 # CLASSE DE L'AGENT TER
 # ═══════════════════════════════════════════════════════════════════════
-
 class TERAnalysisAgent:
     """Agent IA pour analyser les données TER avec LangGraph"""
     
@@ -52,9 +51,9 @@ class TERAnalysisAgent:
         # Créer le graph
         self.graph = self._create_graph()
     
-    def _create_tools(self):
-    """Crée les outils d'analyse disponibles pour l'agent"""
-    
+    def _create_tools(self):  # ← ATTENTION : 4 espaces d'indentation
+        """Crée les outils d'analyse disponibles pour l'agent"""
+        
         df = self.df  # Référence locale pour les closures
         
         @tool
@@ -78,7 +77,7 @@ class TERAnalysisAgent:
             Calcule le taux de régularité pour une région spécifique.
             
             Args:
-                region: Nom de la région à analyser (ex: 'Île-de-France', 'Auvergne-Rhône-Alpes')
+                region: Nom de la région à analyser (ex: 'Île-de-France')
             """
             if 'region' not in df.columns or 'taux_regularite' not in df.columns:
                 return "Colonnes nécessaires non trouvées"
@@ -87,7 +86,7 @@ class TERAnalysisAgent:
             if df_region.empty:
                 regions_disponibles = df['region'].unique()[:5]
                 return (f"Aucune donnée trouvée pour la région '{region}'.\n"
-                       f"Régions disponibles (exemples) : {', '.join(regions_disponibles)}")
+                       f"Régions disponibles : {', '.join(regions_disponibles)}")
             
             avg = df_region['taux_regularite'].mean()
             nb_records = len(df_region)
@@ -102,12 +101,7 @@ class TERAnalysisAgent:
         
         @tool
         def top_regions_regulieres(n: int = 5) -> str:
-            """
-            Liste les N régions les plus régulières.
-            
-            Args:
-                n: Nombre de régions à lister (par défaut 5)
-            """
+            """Liste les N régions les plus régulières."""
             if 'region' not in df.columns or 'taux_regularite' not in df.columns:
                 return "Colonnes nécessaires non trouvées"
             
@@ -120,12 +114,7 @@ class TERAnalysisAgent:
         
         @tool
         def pires_regions(n: int = 5) -> str:
-            """
-            Liste les N régions avec la pire régularité.
-            
-            Args:
-                n: Nombre de régions à lister (par défaut 5)
-            """
+            """Liste les N régions avec la pire régularité."""
             if 'region' not in df.columns or 'taux_regularite' not in df.columns:
                 return "Colonnes nécessaires non trouvées"
             
@@ -155,22 +144,10 @@ class TERAnalysisAgent:
             if 'nombre_trains_supprimes' in df.columns:
                 total_supprimes = df['nombre_trains_supprimes'].sum()
                 stats.append(f"❌ Total trains supprimés : {total_supprimes:,.0f}")
-                
-                if 'nombre_trains_prevus' in df.columns:
-                    taux_suppression = (total_supprimes / total_prevus * 100) if total_prevus > 0 else 0
-                    stats.append(f"📉 Taux de suppression : {taux_suppression:.2f}%")
             
             if 'nombre_trains_retard' in df.columns:
                 total_retards = df['nombre_trains_retard'].sum()
                 stats.append(f"⏰ Total trains en retard : {total_retards:,.0f}")
-                
-                if 'nombre_trains_circules' in df.columns:
-                    taux_retard = (total_retards / total_circules * 100) if total_circules > 0 else 0
-                    stats.append(f"📊 Taux de retard : {taux_retard:.2f}%")
-            
-            if 'nombre_trains_a_l_heure' in df.columns:
-                total_a_l_heure = df['nombre_trains_a_l_heure'].sum()
-                stats.append(f"✅ Total trains à l'heure : {total_a_l_heure:,.0f}")
             
             return "\n".join(stats) if stats else "Données de trains non disponibles"
         
@@ -188,36 +165,7 @@ class TERAnalysisAgent:
                            f"- Période initiale : {first:.2f}%\n"
                            f"- Période récente : {last:.2f}%\n"
                            f"- Tendance : {trend} de {abs(diff):.2f} points")
-            return "Données temporelles insuffisantes pour l'analyse"
-        
-        @tool
-        def comparer_periodes(annee1: int, annee2: int) -> str:
-            """
-            Compare la régularité entre deux années.
-            
-            Args:
-                annee1: Première année à comparer
-                annee2: Deuxième année à comparer
-            """
-            if 'annee' not in df.columns or 'taux_regularite' not in df.columns:
-                return "Colonne 'annee' ou 'taux_regularite' non trouvée"
-            
-            df_y1 = df[df['annee'] == annee1]
-            df_y2 = df[df['annee'] == annee2]
-            
-            if df_y1.empty or df_y2.empty:
-                return f"Données insuffisantes pour {annee1} ou {annee2}"
-            
-            avg1 = df_y1['taux_regularite'].mean()
-            avg2 = df_y2['taux_regularite'].mean()
-            diff = avg2 - avg1
-            
-            evolution = "amélioration" if diff > 0 else "dégradation"
-            
-            return (f"📊 Comparaison {annee1} vs {annee2} :\n\n"
-                   f"- {annee1} : {avg1:.2f}%\n"
-                   f"- {annee2} : {avg2:.2f}%\n"
-                   f"- Évolution : {evolution} de {abs(diff):.2f} points ({diff:+.2f}%)")
+            return "Données temporelles insuffisantes"
         
         @tool
         def liste_regions_disponibles() -> str:
@@ -226,240 +174,134 @@ class TERAnalysisAgent:
                 return "Colonne 'region' non trouvée"
             
             regions = sorted(df['region'].unique())
-            nb_regions = len(regions)
-            
-            result = f"🗺️ {nb_regions} régions disponibles dans les données :\n\n"
+            result = f"🗺️ {len(regions)} régions disponibles :\n\n"
             for region in regions:
-                nb_records = len(df[df['region'] == region])
-                result += f"- {region} ({nb_records} enregistrements)\n"
-            
+                nb = len(df[df['region'] == region])
+                result += f"- {region} ({nb} enregistrements)\n"
             return result
         
-        # ═══════════════════════════════════════════════════════════════════
-        # OUTILS MÉTÉO (NOUVEAUX)
-        # ═══════════════════════════════════════════════════════════════════
+        # ═══════════════════════════════════════════════════════════════
+        # OUTILS MÉTÉO
+        # ═══════════════════════════════════════════════════════════════
         
         @tool
         def verifier_donnees_meteo() -> str:
-            """Vérifie si les données météo sont disponibles dans le dataset."""
+            """Vérifie si les données météo sont disponibles."""
             weather_cols = ['temperature_mean', 'precipitation', 'snow', 'wind_speed', 'weather_severity_score']
-            
             available = [col for col in weather_cols if col in df.columns]
-            missing = [col for col in weather_cols if col not in df.columns]
             
             if not available:
-                return ("❌ Aucune donnée météo disponible.\n\n"
-                       "Pour enrichir le dataset avec la météo :\n"
-                       "1. Allez dans la page '🌦️ Analyse Météo'\n"
-                       "2. Cliquez sur 'Lancer l'enrichissement météo'\n"
-                       "3. Attendez quelques minutes\n"
-                       "4. Revenez au Chat IA")
+                return ("❌ Aucune donnée météo disponible.\n"
+                       "Enrichissez le dataset dans la page '🌦️ Analyse Météo'")
             
-            result = f"✅ Données météo disponibles : {len(available)}/{len(weather_cols)} colonnes\n\n"
-            result += f"📊 Colonnes présentes : {', '.join(available)}\n"
-            
-            if missing:
-                result += f"\n⚠️ Colonnes manquantes : {', '.join(missing)}"
-            
-            # Statistiques rapides
-            if 'weather_severity_score' in df.columns:
-                avg_severity = df['weather_severity_score'].mean()
-                result += f"\n\n🌦️ Score de sévérité moyen : {avg_severity:.1f}/100"
-            
+            result = f"✅ {len(available)}/{len(weather_cols)} colonnes météo disponibles\n"
+            result += f"Colonnes : {', '.join(available)}"
             return result
         
         @tool
         def analyser_impact_meteo_global() -> str:
-            """Analyse l'impact global de la météo sur la régularité des trains."""
+            """Analyse l'impact global de la météo sur la régularité."""
+            if 'weather_severity_score' not in df.columns or 'taux_regularite' not in df.columns:
+                return "❌ Données météo ou régularité manquantes"
             
-            # Vérifier la présence des colonnes nécessaires
-            if 'weather_severity_score' not in df.columns:
-                return ("❌ Données météo non disponibles.\n"
-                       "Enrichissez d'abord le dataset dans la page '🌦️ Analyse Météo'")
-            
-            if 'taux_regularite' not in df.columns:
-                return "❌ Colonne 'taux_regularite' non trouvée"
-            
-            # Créer des catégories météo
             df_clean = df.dropna(subset=['weather_severity_score', 'taux_regularite'])
             
             if len(df_clean) < 10:
-                return "❌ Pas assez de données pour l'analyse"
+                return "❌ Pas assez de données"
             
-            # Catégoriser
-            conditions = [
-                (df_clean['weather_severity_score'] <= 20, 'Bonne'),
-                (df_clean['weather_severity_score'] <= 40, 'Correcte'),
-                (df_clean['weather_severity_score'] <= 60, 'Difficile'),
-                (df_clean['weather_severity_score'] > 60, 'Extrême')
-            ]
-            
-            categories = []
-            for condition, label in conditions:
-                categories.append(label if condition.any() else None)
-            
-            df_clean['meteo_category'] = pd.cut(
+            df_clean['meteo_cat'] = pd.cut(
                 df_clean['weather_severity_score'],
                 bins=[-1, 20, 40, 60, 100],
                 labels=['Bonne', 'Correcte', 'Difficile', 'Extrême']
             )
             
-            # Calculer les moyennes par catégorie
-            regularite_by_meteo = df_clean.groupby('meteo_category')['taux_regularite'].agg(['mean', 'count'])
-            
-            result = "🌦️ **Impact de la météo sur la régularité des trains** :\n\n"
-            
-            for category in ['Bonne', 'Correcte', 'Difficile', 'Extrême']:
-                if category in regularite_by_meteo.index:
-                    avg = regularite_by_meteo.loc[category, 'mean']
-                    count = int(regularite_by_meteo.loc[category, 'count'])
-                    
-                    emoji = "☀️" if category == 'Bonne' else "⛅" if category == 'Correcte' else "🌧️" if category == 'Difficile' else "⛈️"
-                    
-                    result += f"{emoji} **Météo {category}** ({count} jours) : {avg:.2f}% de régularité\n"
-            
-            # Calcul de la perte de régularité
-            if 'Bonne' in regularite_by_meteo.index and 'Extrême' in regularite_by_meteo.index:
-                perte = regularite_by_meteo.loc['Bonne', 'mean'] - regularite_by_meteo.loc['Extrême', 'mean']
-                result += f"\n⚠️ **Perte de régularité** en météo extrême : **{perte:.2f} points**"
+            result = "🌦️ Impact météo sur la régularité :\n\n"
+            for cat in ['Bonne', 'Correcte', 'Difficile', 'Extrême']:
+                data = df_clean[df_clean['meteo_cat'] == cat]
+                if len(data) > 0:
+                    avg = data['taux_regularite'].mean()
+                    result += f"- Météo {cat}: {avg:.2f}% ({len(data)} jours)\n"
             
             return result
         
         @tool
         def impact_neige_sur_regularite() -> str:
-            """Analyse l'impact spécifique de la neige sur la régularité."""
-            
-            if 'snow' not in df.columns:
-                return "❌ Données de neige non disponibles. Enrichissez d'abord le dataset avec la météo."
-            
-            if 'taux_regularite' not in df.columns:
-                return "❌ Colonne 'taux_regularite' non trouvée"
+            """Analyse l'impact de la neige sur la régularité."""
+            if 'snow' not in df.columns or 'taux_regularite' not in df.columns:
+                return "❌ Données de neige non disponibles"
             
             df_clean = df.dropna(subset=['snow', 'taux_regularite'])
+            avec_neige = df_clean[df_clean['snow'] > 0]
+            sans_neige = df_clean[df_clean['snow'] == 0]
             
-            if len(df_clean) < 5:
-                return "❌ Pas assez de données pour l'analyse"
+            if len(avec_neige) == 0:
+                return "✅ Aucun épisode neigeux détecté"
             
-            # Séparer avec/sans neige
-            df_avec_neige = df_clean[df_clean['snow'] > 0]
-            df_sans_neige = df_clean[df_clean['snow'] == 0]
+            reg_avec = avec_neige['taux_regularite'].mean()
+            reg_sans = sans_neige['taux_regularite'].mean()
+            diff = reg_sans - reg_avec
             
-            if len(df_avec_neige) == 0:
-                return "✅ Aucun épisode neigeux détecté dans la période analysée."
-            
-            regularite_avec = df_avec_neige['taux_regularite'].mean()
-            regularite_sans = df_sans_neige['taux_regularite'].mean()
-            difference = regularite_sans - regularite_avec
-            
-            nb_jours_neige = len(df_avec_neige)
-            neige_moyenne = df_avec_neige['snow'].mean()
-            neige_max = df_avec_neige['snow'].max()
-            
-            result = f"❄️ **Impact de la neige sur la régularité** :\n\n"
-            result += f"📊 **Jours avec neige** : {nb_jours_neige} jours\n"
-            result += f"❄️ **Neige moyenne** : {neige_moyenne:.1f} cm\n"
-            result += f"❄️ **Neige maximale** : {neige_max:.1f} cm\n\n"
-            result += f"✅ **Régularité sans neige** : {regularite_sans:.2f}%\n"
-            result += f"❄️ **Régularité avec neige** : {regularite_avec:.2f}%\n\n"
-            
-            if difference > 5:
-                result += f"⚠️ **Impact SIGNIFICATIF** : La neige réduit la régularité de **{difference:.2f} points** !"
-            elif difference > 2:
-                result += f"📊 **Impact modéré** : La neige réduit la régularité de {difference:.2f} points."
-            else:
-                result += f"✅ **Impact faible** : La neige a un effet limité ({difference:.2f} points)."
+            result = f"❄️ Impact de la neige :\n"
+            result += f"- Sans neige: {reg_sans:.2f}%\n"
+            result += f"- Avec neige: {reg_avec:.2f}%\n"
+            result += f"- Perte: {diff:.2f} points\n"
+            result += f"- Jours avec neige: {len(avec_neige)}"
             
             return result
         
         @tool
         def impact_vent_fort() -> str:
-            """Analyse l'impact des vents forts (>90 km/h) sur la régularité."""
-            
-            if 'wind_gusts' not in df.columns:
-                return "❌ Données de vent non disponibles. Enrichissez d'abord le dataset avec la météo."
-            
-            if 'taux_regularite' not in df.columns:
-                return "❌ Colonne 'taux_regularite' non trouvée"
+            """Analyse l'impact des vents forts (>90 km/h)."""
+            if 'wind_gusts' not in df.columns or 'taux_regularite' not in df.columns:
+                return "❌ Données de vent non disponibles"
             
             df_clean = df.dropna(subset=['wind_gusts', 'taux_regularite'])
+            vent_fort = df_clean[df_clean['wind_gusts'] > 90]
+            vent_normal = df_clean[df_clean['wind_gusts'] <= 90]
             
-            if len(df_clean) < 5:
-                return "❌ Pas assez de données pour l'analyse"
+            if len(vent_fort) == 0:
+                return "✅ Aucun vent fort (>90 km/h) détecté"
             
-            # Séparer vent fort / normal
-            df_vent_fort = df_clean[df_clean['wind_gusts'] > 90]
-            df_vent_normal = df_clean[df_clean['wind_gusts'] <= 90]
+            reg_fort = vent_fort['taux_regularite'].mean()
+            reg_normal = vent_normal['taux_regularite'].mean()
+            diff = reg_normal - reg_fort
             
-            if len(df_vent_fort) == 0:
-                return "✅ Aucun épisode de vent fort (>90 km/h) détecté dans la période."
-            
-            regularite_vent_fort = df_vent_fort['taux_regularite'].mean()
-            regularite_vent_normal = df_vent_normal['taux_regularite'].mean()
-            difference = regularite_vent_normal - regularite_vent_fort
-            
-            nb_jours_vent_fort = len(df_vent_fort)
-            vent_max = df_vent_fort['wind_gusts'].max()
-            
-            result = f"💨 **Impact des vents forts sur la régularité** :\n\n"
-            result += f"📊 **Jours avec vent fort (>90 km/h)** : {nb_jours_vent_fort} jours\n"
-            result += f"💨 **Rafale maximale enregistrée** : {vent_max:.0f} km/h\n\n"
-            result += f"✅ **Régularité (vent normal)** : {regularite_vent_normal:.2f}%\n"
-            result += f"💨 **Régularité (vent fort)** : {regularite_vent_fort:.2f}%\n\n"
-            
-            if difference > 5:
-                result += f"⚠️ **Impact SIGNIFICATIF** : Le vent fort réduit la régularité de **{difference:.2f} points** !"
-            elif difference > 2:
-                result += f"📊 **Impact modéré** : Le vent fort réduit la régularité de {difference:.2f} points."
-            else:
-                result += f"✅ **Impact faible** : Le vent fort a un effet limité ({difference:.2f} points)."
+            result = f"💨 Impact du vent fort :\n"
+            result += f"- Vent normal: {reg_normal:.2f}%\n"
+            result += f"- Vent fort: {reg_fort:.2f}%\n"
+            result += f"- Perte: {diff:.2f} points\n"
+            result += f"- Jours avec vent fort: {len(vent_fort)}"
             
             return result
         
         @tool
         def jours_meteo_extreme() -> str:
-            """Liste les jours avec des conditions météo extrêmes."""
-            
+            """Liste les jours avec météo extrême (score > 70)."""
             if 'weather_severity_score' not in df.columns:
-                return "❌ Score de sévérité météo non disponible. Enrichissez le dataset avec la météo."
+                return "❌ Score de sévérité non disponible"
             
-            # Filtrer les jours extrêmes (score > 70)
-            df_extreme = df[df['weather_severity_score'] > 70].copy()
+            extreme = df[df['weather_severity_score'] > 70].copy()
             
-            if len(df_extreme) == 0:
-                return "✅ Aucune condition météo extrême détectée dans la période analysée."
+            if len(extreme) == 0:
+                return "✅ Aucun jour avec météo extrême"
             
-            # Trier par sévérité
-            df_extreme = df_extreme.sort_values('weather_severity_score', ascending=False)
+            extreme = extreme.sort_values('weather_severity_score', ascending=False).head(10)
             
-            result = f"⛈️ **{len(df_extreme)} jours avec météo EXTRÊME** (score > 70) :\n\n"
-            
-            # Top 10 des pires jours
-            for idx, row in df_extreme.head(10).iterrows():
-                date = row.get('date', 'Date inconnue')
-                region = row.get('region', 'Région inconnue')
+            result = f"⛈️ {len(extreme)} jours avec météo EXTRÊME (top 10) :\n\n"
+            for idx, row in extreme.iterrows():
+                date = row.get('date', 'N/A')
                 score = row['weather_severity_score']
-                regularite = row.get('taux_regularite', None)
+                reg = row.get('taux_regularite', None)
                 
                 date_str = date.strftime('%d/%m/%Y') if hasattr(date, 'strftime') else str(date)
-                
-                conditions = []
-                if 'snow' in row and row['snow'] > 0:
-                    conditions.append(f"❄️ Neige: {row['snow']:.1f}cm")
-                if 'wind_gusts' in row and row['wind_gusts'] > 90:
-                    conditions.append(f"💨 Vent: {row['wind_gusts']:.0f}km/h")
-                if 'precipitation' in row and row['precipitation'] > 20:
-                    conditions.append(f"🌧️ Pluie: {row['precipitation']:.0f}mm")
-                
-                conditions_str = " | ".join(conditions) if conditions else "Conditions difficiles"
-                
-                result += f"📅 **{date_str}** - {region}\n"
-                result += f"   Sévérité: {score:.0f}/100 | {conditions_str}\n"
-                if regularite is not None:
-                    result += f"   Régularité: {regularite:.1f}%\n"
+                result += f"📅 {date_str} - Score: {score:.0f}"
+                if reg:
+                    result += f" - Régularité: {reg:.1f}%"
                 result += "\n"
             
             return result
         
+        # Retourner TOUS les outils
         return [
             calculer_regularite_globale,
             regularite_par_region,
@@ -467,15 +309,51 @@ class TERAnalysisAgent:
             pires_regions,
             statistiques_trains,
             evolution_temporelle,
-            comparer_periodes,
             liste_regions_disponibles,
-            # Outils météo
             verifier_donnees_meteo,
             analyser_impact_meteo_global,
             impact_neige_sur_regularite,
             impact_vent_fort,
             jours_meteo_extreme
         ]
+    
+    def _create_graph(self):
+        """Crée le graph LangGraph"""
+        
+        workflow = StateGraph(AgentState)
+        
+        def call_model(state: AgentState):
+            messages = state["messages"]
+            response = self.llm_with_tools.invoke(messages)
+            return {"messages": [response]}
+        
+        tool_node = ToolNode(self.tools)
+        
+        def should_continue(state: AgentState):
+            messages = state["messages"]
+            last_message = messages[-1]
+            
+            if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
+                return "tools"
+            return END
+        
+        workflow.add_node("agent", call_model)
+        workflow.add_node("tools", tool_node)
+        
+        workflow.set_entry_point("agent")
+        workflow.add_conditional_edges(
+            "agent",
+            should_continue,
+            {
+                "tools": "tools",
+                END: END
+            }
+        )
+        workflow.add_edge("tools", "agent")
+        
+        return workflow.compile()
+    
+ 
     
     def ask(self, question: str) -> str:
         """
