@@ -344,3 +344,42 @@ class TERAnalysisAgent:
             
         except Exception as e:
             return f"❌ Erreur lors du traitement de la question : {str(e)}"
+@tool
+def analyser_impact_meteo() -> str:
+    """Analyse l'impact global des conditions météorologiques sur les retards et la régularité."""
+    
+    # Cette fonction sera appelée depuis l'app principale
+    return ("Pour une analyse météo complète, rendez-vous dans la section "
+            "'🌦️ Analyse Météo' du menu principal.")
+
+@tool
+def causes_retards_meteo() -> str:
+    """Détermine si les retards sont liés à des conditions météorologiques."""
+    
+    if 'weather_severity_score' not in df.columns:
+        return ("❌ Données météo non disponibles. Veuillez d'abord enrichir "
+                "le dataset avec les données météo dans la section dédiée.")
+    
+    # Filtrer les jours avec forte sévérité météo
+    df_meteo_severe = df[df['weather_severity_score'] > 60]
+    
+    if df_meteo_severe.empty:
+        return "✅ Aucune condition météo extrême détectée dans la période analysée."
+    
+    # Analyser les retards lors de météo sévère
+    if 'nombre_trains_retard' in df_meteo_severe.columns:
+        total_jours_severe = len(df_meteo_severe)
+        retards_meteo_severe = df_meteo_severe['nombre_trains_retard'].sum()
+        retards_moyenne_severe = df_meteo_severe['nombre_trains_retard'].mean()
+        retards_moyenne_normale = df[df['weather_severity_score'] <= 60]['nombre_trains_retard'].mean()
+        
+        augmentation = ((retards_moyenne_severe - retards_moyenne_normale) / retards_moyenne_normale * 100)
+        
+        return (f"🌨️ Impact de la météo sur les retards :\n\n"
+                f"- {total_jours_severe} jours avec conditions météo sévères\n"
+                f"- {retards_meteo_severe:,.0f} trains en retard lors de ces jours\n"
+                f"- Moyenne de {retards_moyenne_severe:.1f} retards/jour (météo sévère)\n"
+                f"- Moyenne de {retards_moyenne_normale:.1f} retards/jour (météo normale)\n"
+                f"- Augmentation de {augmentation:+.1f}% des retards en conditions météo difficiles")
+    
+    return "Données insuffisantes pour l'analyse"
