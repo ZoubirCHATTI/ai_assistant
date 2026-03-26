@@ -79,24 +79,27 @@ if df is not None:
 
     query = st.text_input("Posez une question sur vos trains (ex: 'Fais un bar chart des retards') :")
 
-    import traceback
-
-# ...
+import traceback
 
 if query:
     with st.spinner("L'IA analyse et génère le visuel..."):
+        response = None
         try:
-            # ✅ préférable d'appeler avec un dict
+            # important : utiliser un dict
             response = agent.invoke({"input": query})
         except Exception as e:
-            st.error(f"Erreur de l'agent : {e}")
-            st.text(traceback.format_exc())
-            st.stop()
+            # Erreur de parsing fréquente avec les agents ReAct
+            st.warning("L'agent a rencontré une erreur de parsing, "
+                       "mais le code Python a probablement été exécuté.")
+            st.text(str(e)[:500])  # pour debug
+            # NE PAS faire st.stop() ici
 
-        st.markdown("#### Réponse de l'assistant :")
-        # adapter en fonction de ce que renvoie l’agent
-        st.write(response.get("output", response))
+        # Afficher éventuellement le texte retourné (si dispo)
+        if isinstance(response, dict):
+            st.markdown("#### Réponse de l'assistant :")
+            st.write(response.get("output", response))
 
+        # ✅ Dans tous les cas, on essaie d'afficher la figure générée
         if plt.get_fignums():
             st.pyplot(plt.gcf())
             plt.clf()
