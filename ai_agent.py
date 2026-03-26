@@ -101,29 +101,103 @@ class TERAnalysisAgent:
         
         @tool
         def top_regions_regulieres(n: int = 5) -> str:
-            """Liste les N régions les plus régulières."""
-            if 'region' not in df.columns or 'taux_regularite' not in df.columns:
-                return "Colonnes nécessaires non trouvées"
+            """
+            Liste les N régions les plus régulières.
             
-            top = df.groupby('region')['taux_regularite'].mean().nlargest(n)
-            result = f"🏆 Top {n} régions les plus régulières :\n\n"
-            for i, (region, taux) in enumerate(top.items(), 1):
-                emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
-                result += f"{emoji} {region} : {taux:.2f}%\n"
-            return result
-        
-        @tool
+            Args:
+                n: Nombre de régions à lister (par défaut 5)
+            """
+            try:
+                # Vérifier les colonnes nécessaires
+                if 'region' not in df.columns:
+                    return "❌ Colonne 'region' non trouvée dans les données"
+                
+                if 'taux_regularite' not in df.columns:
+                    return "❌ Colonne 'taux_regularite' non trouvée dans les données"
+                
+                # Vérifier qu'il y a des données
+                if len(df) == 0:
+                    return "❌ Le dataset est vide"
+                
+                # Supprimer les valeurs nulles
+                df_clean = df[['region', 'taux_regularite']].dropna()
+                
+                if len(df_clean) == 0:
+                    return "❌ Aucune donnée valide après nettoyage"
+                
+                # Calculer la moyenne par région
+                regularite_par_region = df_clean.groupby('region')['taux_regularite'].mean()
+                
+                if len(regularite_par_region) == 0:
+                    return "❌ Impossible de calculer la régularité par région"
+                
+                # Récupérer les N meilleures
+                n_regions = min(n, len(regularite_par_region))
+                top = regularite_par_region.nlargest(n_regions)
+                
+                result = f"🏆 **Top {n_regions} régions les plus régulières :**\n\n"
+                
+                for i, (region, taux) in enumerate(top.items(), 1):
+                    emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
+                    result += f"{emoji} **{region}** : {taux:.2f}%\n"
+                
+                # Ajouter un contexte
+                result += f"\n📊 **Contexte :** {len(regularite_par_region)} régions analysées au total"
+                
+                return result
+                
+            except Exception as e:
+                return f"❌ Erreur lors de l'analyse des meilleures régions : {str(e)}"
+                
+       @tool
         def pires_regions(n: int = 5) -> str:
-            """Liste les N régions avec la pire régularité."""
-            if 'region' not in df.columns or 'taux_regularite' not in df.columns:
-                return "Colonnes nécessaires non trouvées"
+            """
+            Liste les N régions avec la pire régularité.
             
-            bottom = df.groupby('region')['taux_regularite'].mean().nsmallest(n)
-            result = f"⚠️ Top {n} régions avec la pire régularité :\n\n"
-            for i, (region, taux) in enumerate(bottom.items(), 1):
-                result += f"{i}. {region} : {taux:.2f}% ⚠️\n"
-            return result
-        
+            Args:
+                n: Nombre de régions à lister (par défaut 5)
+            """
+            try:
+                # Vérifier les colonnes nécessaires
+                if 'region' not in df.columns:
+                    return "❌ Colonne 'region' non trouvée dans les données"
+                
+                if 'taux_regularite' not in df.columns:
+                    return "❌ Colonne 'taux_regularite' non trouvée dans les données"
+                
+                # Vérifier qu'il y a des données
+                if len(df) == 0:
+                    return "❌ Le dataset est vide"
+                
+                # Supprimer les valeurs nulles
+                df_clean = df[['region', 'taux_regularite']].dropna()
+                
+                if len(df_clean) == 0:
+                    return "❌ Aucune donnée valide après nettoyage"
+                
+                # Calculer la moyenne par région
+                regularite_par_region = df_clean.groupby('region')['taux_regularite'].mean()
+                
+                if len(regularite_par_region) == 0:
+                    return "❌ Impossible de calculer la régularité par région"
+                
+                # Récupérer les N pires
+                n_regions = min(n, len(regularite_par_region))  # S'assurer qu'on ne demande pas plus que disponible
+                bottom = regularite_par_region.nsmallest(n_regions)
+                
+                result = f"⚠️ **Top {n_regions} régions avec la pire régularité :**\n\n"
+                
+                for i, (region, taux) in enumerate(bottom.items(), 1):
+                    result += f"{i}. **{region}** : {taux:.2f}% ⚠️\n"
+                
+                # Ajouter un contexte
+                result += f"\n📊 **Contexte :** {len(regularite_par_region)} régions analysées au total"
+                
+                return result
+                
+            except Exception as e:
+                return f"❌ Erreur lors de l'analyse des pires régions : {str(e)}"
+                
         @tool
         def statistiques_trains() -> str:
             """Donne des statistiques complètes sur le nombre de trains."""
