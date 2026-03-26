@@ -72,17 +72,26 @@ if df is not None:
 
     query = st.text_input("Posez une question sur vos trains (ex: 'Fais un bar chart des retards') :")
 
-    if query:
-        with st.spinner("L'IA analyse et génère le visuel..."):
-            # On demande à l'IA d'être brève pour éviter les erreurs de parsing
-            response = agent.invoke(query)
+    import traceback
 
-            st.markdown("#### Réponse de l'assistant :")
-            st.write(response["output"])
+# ...
 
-            # Affichage du graphique si l'IA en a généré un
-            if plt.get_fignums():
-                st.pyplot(plt.gcf())
-                plt.clf() # Nettoie la mémoire pour la prochaine question
+if query:
+    with st.spinner("L'IA analyse et génère le visuel..."):
+        try:
+            # ✅ préférable d'appeler avec un dict
+            response = agent.invoke({"input": query})
+        except Exception as e:
+            st.error(f"Erreur de l'agent : {e}")
+            st.text(traceback.format_exc())
+            st.stop()
+
+        st.markdown("#### Réponse de l'assistant :")
+        # adapter en fonction de ce que renvoie l’agent
+        st.write(response.get("output", response))
+
+        if plt.get_fignums():
+            st.pyplot(plt.gcf())
+            plt.clf()
 else:
     st.warning("Impossible de charger le DataFrame. Vérifiez vos accès Azure.")
