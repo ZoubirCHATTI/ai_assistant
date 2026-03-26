@@ -5,4 +5,4 @@ langchain-experimental
 azure-storage-blob
 matplotlib
 seaborn
-pip install openpyxl
+openpyxl
