@@ -68,7 +68,7 @@ if df is not None:
         df_sample, # ✅ Utilise l'échantillon ici
         verbose=True,
         allow_dangerous_code=True,
-        handle_parsing_errors=FALSE,
+        handle_parsing_errors=False,
         prefix=PREFIX
     )
     
