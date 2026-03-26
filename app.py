@@ -55,7 +55,17 @@ if df is not None:
     )
 
     # Prefix pour forcer l'IA à être rigoureuse et ne pas bugger le parser
-    PREFIX = "You are a data expert. Use the pandas dataframe 'df'. If you create a chart, use matplotlib and conclude with 'Final Answer: Done.'"
+    PREFIX = """You are a highly skilled data analysis assistant. You are interacting with a user who wants to analyze a pandas DataFrame named 'df'.
+
+You must always follow these rules:
+1. Only use the provided 'df' for data analysis.
+2. If asked to create a chart, use `matplotlib.pyplot` (already imported as `plt`).
+3. After executing a Python code block that produces a chart or a definitive answer, your final response MUST be a clear, concise statement, for example: "Final Answer: The bar chart shows the distribution." or "Final Answer: The average delay is X minutes."
+4. Do NOT include any additional thoughts or actions after your 'Final Answer'.
+5. Always conclude your turn with a 'Final Answer:' if you have fully addressed the user's request.
+6. If you need to perform multiple steps, think step by step but ONLY output the final result or chart.
+
+Begin"""
     if len(df) > 10000:
         df_sample = df.sample(n=10000, random_state=42)
         st.warning("Utilisation d'un échantillon du DataFrame pour accélérer l'analyse.")
