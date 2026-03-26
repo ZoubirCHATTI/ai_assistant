@@ -13,195 +13,161 @@ Original file is located at
 
 # -*- coding: utf-8 -*-
 # -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 from azure.storage.blob import BlobServiceClient
-from langchain.agents import initialize_agent, AgentType
 from langchain_mistralai import ChatMistralAI
 from langchain.tools import Tool
+from langchain.agents import AgentExecutor, create_tool_calling_agent # <-- NOUVEAUX IMPORTS
+from langchain_core.prompts import ChatPromptTemplate # <-- NOUVEL IMPORT
 import io
 import traceback
 
-# --- CONFIGURATION DE LA PAGE ---
+# --- CONFIGURATION ---
 st.set_page_config(page_title="Train Data Assistant", layout="wide")
 st.title("🚆 Assistant IA - Analyse Ferroviaire")
 
-# --- RÉCUPÉRATION DES SECRETS ---
+# --- SECRETS ---
 try:
     AZURE_CONN = st.secrets["AZURE_STORAGE_CONNECTION_STRING"]
     MISTRAL_KEY = st.secrets["MISTRAL_API_KEY"]
 except KeyError:
-    st.error("⚠️ Clés de configuration manquantes dans les Secrets Streamlit.")
+    st.error("⚠️ Clés manquantes dans les Secrets Streamlit.")
     st.stop()
 
-# --- CHARGEMENT DES DONNÉES ---
-@st.cache_data(show_spinner="Chargement des données depuis Azure...")
+# --- CHARGEMENT DONNÉES ---
+@st.cache_data(show_spinner="Chargement...")
 def load_data_from_azure():
     try:
         service_client = BlobServiceClient.from_connection_string(AZURE_CONN)
         blob_client = service_client.get_blob_client(container="ztacontainer", blob="otp_transformed.xlsx")
         stream = blob_client.download_blob().readall()
-        data = pd.read_excel(io.BytesIO(stream))
-        return data
+        return pd.read_excel(io.BytesIO(stream))
     except Exception as e:
-        st.error(f"Erreur lors du chargement depuis Azure : {e}")
+        st.error(f"Erreur Azure : {e}")
         return None
 
 df = load_data_from_azure()
 
 if df is not None:
-    # Échantillonnage si nécessaire
     if len(df) > 10000:
         df_sample = df.sample(n=10000, random_state=42)
-        st.info(f"📊 Échantillon de 10 000 lignes utilisé (sur {len(df)})")
+        st.info(f"Échantillon de 10 000 lignes sur {len(df)}")
     else:
         df_sample = df
 
     # --- FONCTIONS MÉTIER ---
     def ponctualite_par_direction(direction: str) -> str:
-        """Calcule le taux de ponctualité pour une direction ('N' ou 'S')"""
         direction = direction.strip().upper()
         if direction not in ['N', 'S']:
             return "Erreur : direction doit être 'N' ou 'S'"
-        
         df_dir = df_sample[df_sample['direction'].str.upper() == direction]
         if df_dir.empty:
-            return f"Aucune donnée pour la direction {direction}"
-        
+            return f"Aucune donnée pour {direction}"
         total = len(df_dir)
         a_l_heure = len(df_dir[df_dir['is_delayed'] == 0])
         taux = (a_l_heure / total) * 100
-        
         return f"Direction {direction} : {total} trains, {a_l_heure} à l'heure, ponctualité = {taux:.2f}%"
 
-    def heures_critiques(input_text: str = "") -> str:
-        """Identifie les heures avec le plus de retards"""
+    def heures_critiques(txt: str = "") -> str:
         df_retards = df_sample[df_sample['is_delayed'] == 1]
         if df_retards.empty:
-            return "Aucun train en retard"
-        
-        top_heures = df_retards['hour'].value_counts().nlargest(3)
-        result = "Top 3 heures avec le plus de retards :\n"
-        for heure, count in top_heures.items():
-            result += f"- {heure}h : {count} trains\n"
+            return "Aucun retard"
+        top = df_retards['hour'].value_counts().nlargest(3)
+        result = "Top 3 heures critiques :\n"
+        for h, c in top.items():
+            result += f"- {h}h : {c} trains\n"
         return result
 
-    def trains_critiques(input_text: str = "") -> str:
-        """Liste les 5 trains avec les plus longs retards"""
-        top_trains = df_sample.nlargest(5, 'delay_minutes')
-        result = "Top 5 trains avec les plus longs retards :\n"
-        for idx, row in top_trains.iterrows():
-            result += f"- Train {row['train_id']} : {row['delay_minutes']} min\n"
+    def trains_critiques(txt: str = "") -> str:
+        top = df_sample.nlargest(5, 'delay_minutes')
+        result = "Top 5 retards :\n"
+        for _, r in top.iterrows():
+            result += f"- Train {r['train_id']} : {r['delay_minutes']} min\n"
         return result
 
-    def stats_globales(input_text: str = "") -> str:
-        """Statistiques générales sur la ponctualité"""
+    def stats_globales(txt: str = "") -> str:
         total = len(df_sample)
         retards = df_sample['is_delayed'].sum()
-        taux_ponctualite = ((total - retards) / total) * 100
-        retard_moyen = df_sample[df_sample['is_delayed'] == 1]['delay_minutes'].mean()
-        
-        return (f"📊 Statistiques globales :\n"
-                f"- Total : {total} trains\n"
-                f"- En retard : {retards} ({100*retards/total:.1f}%)\n"
-                f"- Ponctualité : {taux_ponctualite:.2f}%\n"
-                f"- Retard moyen : {retard_moyen:.1f} min")
+        taux = ((total - retards) / total) * 100
+        retard_moy = df_sample[df_sample['is_delayed'] == 1]['delay_minutes'].mean()
+        return (f"Stats :\n- Total : {total} trains\n- Retards : {retards} ({100*retards/total:.1f}%)\n"
+                f"- Ponctualité : {taux:.2f}%\n- Retard moyen : {retard_moy:.1f} min")
 
-    # --- CRÉATION DES TOOLS ---
+    # --- TOOLS ---
     tools = [
-        Tool(
-            name="Ponctualite_Direction",
-            func=ponctualite_par_direction,
-            description="Calcule la ponctualité pour une direction. Input requis : 'N' ou 'S'"
-        ),
-        Tool(
-            name="Heures_Critiques",
-            func=heures_critiques,
-            description="Identifie les heures avec le plus de retards. Pas d'input requis."
-        ),
-        Tool(
-            name="Trains_Critiques",
-            func=trains_critiques,
-            description="Liste les trains avec les plus longs retards. Pas d'input requis."
-        ),
-        Tool(
-            name="Statistiques_Globales",
-            func=stats_globales,
-            description="Donne les statistiques générales de ponctualité. Pas d'input requis."
-        )
+        Tool(name="Ponctualite_Direction", func=ponctualite_par_direction,
+             description="Calcule la ponctualité pour une direction donnée. L'input doit être 'N' ou 'S'."),
+        Tool(name="Heures_Critiques", func=heures_critiques,
+             description="Identifie les heures de la journée avec le plus de retards. Aucun input spécifique requis."),
+        Tool(name="Trains_Critiques", func=trains_critiques,
+             description="Liste les 5 trains ayant accumulé le plus de retard en minutes. Aucun input spécifique requis."),
+        Tool(name="Statistiques_Globales", func=stats_globales,
+             description="Fournit les statistiques générales de ponctualité pour l'ensemble des trains. Aucun input spécifique requis.")
     ]
 
-    # --- INITIALISATION LLM ET AGENT ---
-    llm = ChatMistralAI(
-        model="mistral-small-latest",
-        mistral_api_key=MISTRAL_KEY,
-        temperature=0
+    # --- AGENT ---
+    llm = ChatMistralAI(model="mistral-small-latest", mistral_api_key=MISTRAL_KEY, temperature=0)
+
+    # 1. Créer le Prompt
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", "Tu es un assistant expert en analyse ferroviaire. Utilise les outils pour répondre aux questions. Réponds toujours en français."),
+            ("human", "{input}"),
+            ("placeholder", "{agent_scratchpad}"), # Nécessaire pour le fonctionnement interne de l'agent
+        ]
     )
 
-    agent = initialize_agent(
-        tools=tools,
-        llm=llm,
-        agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
-        verbose=True,
-        handle_parsing_errors=True,
-        max_iterations=3
-    )
+    # 2. Créer l'Agent (logique qui choisit les outils)
+    agent = create_tool_calling_agent(llm, tools, prompt)
 
-    # --- INTERFACE ---
-    st.write("### 📋 Aperçu des données")
+    # 3. Créer l'Executor (qui exécute l'agent et les outils)
+    agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+    # --- UI ---
+    st.write("### 📋 Aperçu")
     st.dataframe(df_sample.head(5))
     
-    st.write("### 💬 Posez votre question")
-    st.markdown("""
-    **Exemples :**
-    - Quelle est la ponctualité de la direction N ?
-    - Quelles sont les heures critiques ?
-    - Donne-moi les statistiques globales
-    - Quels sont les trains les plus en retard ?
-    """)
+    st.write("### 💬 Question")
+    st.markdown("**Exemples :** *Ponctualité direction N ?* • *Heures critiques ?* • *Stats globales ?*")
 
-    query = st.text_input("Votre question :", key="query_input")
+    query = st.text_input("Votre question :", key="q")
 
     if query:
-        with st.spinner("🤔 L'IA réfléchit..."):
+        with st.spinner("Réflexion..."):
             try:
-                response = agent.invoke({"input": query})
-                st.markdown("#### ✅ Réponse :")
+                # Utiliser l'agent_executor pour invoquer
+                response = agent_executor.invoke({"input": query}) 
+                st.markdown("#### ✅ Réponse")
                 st.success(response.get("output", "Pas de réponse"))
                 
             except Exception as e:
-                error_str = str(e)
-                if "429" in error_str or "rate limit" in error_str.lower():
-                    st.error("⏳ Limite de requêtes Mistral atteinte. Attendez quelques minutes.")
+                if "429" in str(e) or "rate limit" in str(e).lower():
+                    st.error("⏳ Rate limit Mistral atteint")
                 else:
-                    st.error("❌ Erreur lors du traitement")
+                    st.error("❌ Erreur")
                     with st.expander("Détails"):
                         st.code(traceback.format_exc())
 
-    # --- BOUTONS RAPIDES ---
+    # --- BOUTONS ---
     st.write("---")
     st.write("### ⚡ Actions rapides")
     
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
         if st.button("📊 Stats"):
             st.info(stats_globales())
-    
-    with col2:
-        if st.button("🔴 Heures critiques"):
+    with c2:
+        if st.button("🔴 Heures"):
             st.warning(heures_critiques())
-    
-    with col3:
-        if st.button("🚂 Top retards"):
+    with c3:
+        if st.button("🚂 Retards"):
             st.error(trains_critiques())
-    
-    with col4:
-        if st.button("📈 Direction N"):
+    with c4:
+        if st.button("📈 Dir N"):
             st.success(ponctualite_par_direction("N"))
-
 else:
-    st.error("❌ Impossible de charger les données depuis Azure")
-    
+    st.error("❌ Impossible de charger les données")
     
