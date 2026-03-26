@@ -149,7 +149,7 @@ class TERAnalysisAgent:
             except Exception as e:
                 return f"❌ Erreur lors de l'analyse des meilleures régions : {str(e)}"
                 
-       @tool
+        @tool
         def pires_regions(n: int = 5) -> str:
             """
             Liste les N régions avec la pire régularité.
