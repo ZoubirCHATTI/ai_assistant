@@ -204,9 +204,4 @@ if df is not None:
 else:
     st.error("❌ Impossible de charger les données depuis Azure")
     
-    with col3:
-        if st.button("🚂 Top 5 retards"):
-            st.error(trains_les_plus_critiques())
-
-else:
-    st.warning("Impossible de charger le DataFrame. Vérifiez votre connexion Azure.")
+    
