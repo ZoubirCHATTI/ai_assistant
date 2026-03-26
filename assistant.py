@@ -9,7 +9,7 @@ Original file is located at
 <a href="https://colab.research.google.com/github/ZoubirCHATTI/ai_assistant/blob/main/app.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a>
 """
 
-!pip install azure
+
 
 import streamlit as st
 import pandas as pd
