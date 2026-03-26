@@ -109,7 +109,7 @@ llm =ChartMistralAI(model="misltral-large-latest",
 pandas_agent = create_pandas_dataframe_agent(
     llm=llm,
     df_sample,
-    verbose=True
+    verbose=True,
     allow_dangerous_code= True,
     handle_parsing_errors = True
 )
