@@ -86,6 +86,7 @@ import requests
 
 if query:
     with st.spinner("L'IA analyse et génère le visuel..."):
+        response = None
         try:
             response = agent.invoke({"input": query})
         except Exception as e:
