@@ -12,12 +12,11 @@ Original file is located at
 
 
 # -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
 from azure.storage.blob import BlobServiceClient
-from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
 from langchain.agents import initialize_agent, AgentType
 from langchain_mistralai import ChatMistralAI
 from langchain.tools import Tool
@@ -34,11 +33,10 @@ try:
     MISTRAL_KEY = st.secrets["MISTRAL_API_KEY"]
 except KeyError:
     st.error("⚠️ Clés de configuration manquantes dans les Secrets Streamlit.")
-    st.info("Veuillez configurer AZURE_STORAGE_CONNECTION_STRING et MISTRAL_API_KEY.")
     st.stop()
 
-# --- CHARGEMENT ET CACHE DES DONNÉES ---
-@st.cache_data(show_spinner="Connexion à Azure et chargement des données...")
+# --- CHARGEMENT DES DONNÉES ---
+@st.cache_data(show_spinner="Chargement des données depuis Azure...")
 def load_data_from_azure():
     try:
         service_client = BlobServiceClient.from_connection_string(AZURE_CONN)
@@ -47,180 +45,164 @@ def load_data_from_azure():
         data = pd.read_excel(io.BytesIO(stream))
         return data
     except Exception as e:
-        st.error(f"Erreur de connexion ou de chargement depuis Azure : {e}")
+        st.error(f"Erreur lors du chargement depuis Azure : {e}")
         return None
 
 df = load_data_from_azure()
 
 if df is not None:
-    # --- PRÉPARATION DU DATAFRAME POUR L'ANALYSE ---
+    # Échantillonnage si nécessaire
     if len(df) > 10000:
         df_sample = df.sample(n=10000, random_state=42)
-        st.warning(f"Utilisation d'un échantillon de 10,000 lignes (sur {len(df)}) pour accélérer l'analyse.")
+        st.info(f"📊 Échantillon de 10 000 lignes utilisé (sur {len(df)})")
     else:
         df_sample = df
 
-    # --- DÉFINITION DES FONCTIONS MÉTIER ---
-    def create_ferroviaire_tools(dataframe):
-        """Crée une liste d'outils personnalisés pour l'analyse ferroviaire."""
+    # --- FONCTIONS MÉTIER ---
+    def ponctualite_par_direction(direction: str) -> str:
+        """Calcule le taux de ponctualité pour une direction ('N' ou 'S')"""
+        direction = direction.strip().upper()
+        if direction not in ['N', 'S']:
+            return "Erreur : direction doit être 'N' ou 'S'"
         
-        def ponctualite_par_direction(direction: str) -> str:
-            """
-            Calcule le taux de ponctualité pour une direction spécifique ('N' ou 'S').
-            Utilise cet outil pour répondre à des questions comme 'quelle est la ponctualité de la direction N ?'.
-            """
-            if direction.upper() not in ['N', 'S']:
-                return "Erreur : La direction doit être 'N' ou 'S'."
-            
-            df_dir = dataframe[dataframe['direction'].str.upper() == direction.upper()]
-            if df_dir.empty:
-                return f"Aucune donnée trouvée pour la direction {direction}."
-            
-            total_trains = len(df_dir)
-            trains_a_l_heure = len(df_dir[df_dir['is_delayed'] == 0])
-            taux_ponctualite = (trains_a_l_heure / total_trains) * 100 if total_trains > 0 else 0
-            
-            return (f"Direction {direction.upper()} : {total_trains} trains, "
-                    f"{trains_a_l_heure} à l'heure, ponctualité : {taux_ponctualite:.2f}%")
-
-        def heures_avec_le_plus_de_retards() -> str:
-            """
-            Identifie les 3 heures de la journée où il y a le plus de trains en retard.
-            """
-            df_retards = dataframe[dataframe['is_delayed'] == 1]
-            if df_retards.empty:
-                return "Aucun train en retard trouvé."
-            
-            top_heures = df_retards['hour'].value_counts().nlargest(3)
-            result = "Heures avec le plus de retards :\n"
-            for heure, count in top_heures.items():
-                result += f"- {heure}h00 : {count} trains\n"
-            return result
-
-        def trains_les_plus_critiques() -> str:
-            """
-            Liste les 5 trains ayant les plus longs retards en minutes.
-            """
-            top_trains = dataframe.nlargest(5, 'delay_minutes')
-            result = "Top 5 des trains avec les plus longs retards :\n"
-            for _, row in top_trains.iterrows():
-                result += f"- Train {row['train_id']} : {row['delay_minutes']} min ({row['date']})\n"
-            return result
-
-        def statistiques_globales() -> str:
-            """
-            Donne les statistiques générales sur la ponctualité de tous les trains.
-            """
-            total = len(dataframe)
-            retards = dataframe['is_delayed'].sum()
-            taux = ((total - retards) / total) * 100 if total > 0 else 0
-            retard_moyen = dataframe[dataframe['is_delayed'] == 1]['delay_minutes'].mean()
-            
-            return (f"Statistiques globales :\n"
-                    f"- {total} trains au total\n"
-                    f"- {retards} trains en retard ({100*retards/total:.1f}%)\n"
-                    f"- Taux de ponctualité : {taux:.2f}%\n"
-                    f"- Retard moyen : {retard_moyen:.1f} minutes")
+        df_dir = df_sample[df_sample['direction'].str.upper() == direction]
+        if df_dir.empty:
+            return f"Aucune donnée pour la direction {direction}"
         
-        # Convertir en Tools LangChain
-        tools = [
-            Tool(
-                name="Ponctualité par Direction",
-                func=ponctualite_par_direction,
-                description="Calcule le taux de ponctualité pour une direction ('N' ou 'S'). "
-                            "Input: une lettre 'N' ou 'S'"
-            ),
-            Tool(
-                name="Heures Critiques",
-                func=lambda x: heures_avec_le_plus_de_retards(),
-                description="Identifie les heures avec le plus de retards. "
-                            "Utilise cet outil pour 'quelles sont les pires heures' ou 'heures de pointe des retards'. "
-                            "Input: n'importe quel texte (ignoré)"
-            ),
-            Tool(
-                name="Trains Critiques",
-                func=lambda x: trains_les_plus_critiques(),
-                description="Liste les trains avec les plus longs retards. "
-                            "Utilise pour 'quels sont les pires trains' ou 'trains les plus en retard'. "
-                            "Input: n'importe quel texte (ignoré)"
-            ),
-            Tool(
-                name="Statistiques Générales",
-                func=lambda x: statistiques_globales(),
-                description="Donne un aperçu général de la ponctualité : nombre total de trains, taux de retard, etc. "
-                            "Input: n'importe quel texte (ignoré)"
-            )
-        ]
+        total = len(df_dir)
+        a_l_heure = len(df_dir[df_dir['is_delayed'] == 0])
+        taux = (a_l_heure / total) * 100
         
-        return tools
+        return f"Direction {direction} : {total} trains, {a_l_heure} à l'heure, ponctualité = {taux:.2f}%"
 
-    # --- INITIALISATION DU LLM ---
-    llm = ChatMistralAI(model="mistral-small-latest", mistral_api_key=MISTRAL_KEY, temperature=0)
+    def heures_critiques(input_text: str = "") -> str:
+        """Identifie les heures avec le plus de retards"""
+        df_retards = df_sample[df_sample['is_delayed'] == 1]
+        if df_retards.empty:
+            return "Aucun train en retard"
+        
+        top_heures = df_retards['hour'].value_counts().nlargest(3)
+        result = "Top 3 heures avec le plus de retards :\n"
+        for heure, count in top_heures.items():
+            result += f"- {heure}h : {count} trains\n"
+        return result
 
-    # --- CRÉER LES OUTILS PERSONNALISÉS ---
-    outils_personnalises = create_ferroviaire_tools(df_sample)
+    def trains_critiques(input_text: str = "") -> str:
+        """Liste les 5 trains avec les plus longs retards"""
+        top_trains = df_sample.nlargest(5, 'delay_minutes')
+        result = "Top 5 trains avec les plus longs retards :\n"
+        for idx, row in top_trains.iterrows():
+            result += f"- Train {row['train_id']} : {row['delay_minutes']} min\n"
+        return result
 
-    # --- CRÉER L'AGENT FINAL AVEC INITIALIZE_AGENT ---
-    agent_executor = initialize_agent(
-        tools=outils_personnalises,
+    def stats_globales(input_text: str = "") -> str:
+        """Statistiques générales sur la ponctualité"""
+        total = len(df_sample)
+        retards = df_sample['is_delayed'].sum()
+        taux_ponctualite = ((total - retards) / total) * 100
+        retard_moyen = df_sample[df_sample['is_delayed'] == 1]['delay_minutes'].mean()
+        
+        return (f"📊 Statistiques globales :\n"
+                f"- Total : {total} trains\n"
+                f"- En retard : {retards} ({100*retards/total:.1f}%)\n"
+                f"- Ponctualité : {taux_ponctualite:.2f}%\n"
+                f"- Retard moyen : {retard_moyen:.1f} min")
+
+    # --- CRÉATION DES TOOLS ---
+    tools = [
+        Tool(
+            name="Ponctualite_Direction",
+            func=ponctualite_par_direction,
+            description="Calcule la ponctualité pour une direction. Input requis : 'N' ou 'S'"
+        ),
+        Tool(
+            name="Heures_Critiques",
+            func=heures_critiques,
+            description="Identifie les heures avec le plus de retards. Pas d'input requis."
+        ),
+        Tool(
+            name="Trains_Critiques",
+            func=trains_critiques,
+            description="Liste les trains avec les plus longs retards. Pas d'input requis."
+        ),
+        Tool(
+            name="Statistiques_Globales",
+            func=stats_globales,
+            description="Donne les statistiques générales de ponctualité. Pas d'input requis."
+        )
+    ]
+
+    # --- INITIALISATION LLM ET AGENT ---
+    llm = ChatMistralAI(
+        model="mistral-small-latest",
+        mistral_api_key=MISTRAL_KEY,
+        temperature=0
+    )
+
+    agent = initialize_agent(
+        tools=tools,
         llm=llm,
         agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
         verbose=True,
         handle_parsing_errors=True,
-        max_iterations=5  # Limite pour éviter les boucles infinies
+        max_iterations=3
     )
 
-    # --- INTERFACE UTILISATEUR ---
-    st.write("### Aperçu des données Azure :")
+    # --- INTERFACE ---
+    st.write("### 📋 Aperçu des données")
     st.dataframe(df_sample.head(5))
     
-    st.info("💡 Assistant prêt ! Posez une question sur vos données.")
-    st.write("**Exemples de questions :**")
+    st.write("### 💬 Posez votre question")
     st.markdown("""
-    - *Quelle est la ponctualité pour la direction N ?*
-    - *Quelles sont les heures avec le plus de retards ?*
-    - *Quels sont les trains les plus en retard ?*
-    - *Donne-moi les statistiques générales*
+    **Exemples :**
+    - Quelle est la ponctualité de la direction N ?
+    - Quelles sont les heures critiques ?
+    - Donne-moi les statistiques globales
+    - Quels sont les trains les plus en retard ?
     """)
 
-    query = st.text_input("Posez votre question ici :", key="main_query")
+    query = st.text_input("Votre question :", key="query_input")
 
     if query:
-        with st.spinner("L'IA réfléchit et analyse..."):
-            response = None
+        with st.spinner("🤔 L'IA réfléchit..."):
             try:
-                response = agent_executor.invoke({"input": query})
+                response = agent.invoke({"input": query})
+                st.markdown("#### ✅ Réponse :")
+                st.success(response.get("output", "Pas de réponse"))
                 
-                st.markdown("#### 💬 Réponse de l'assistant :")
-                st.success(response.get("output", "Pas de réponse claire."))
-
             except Exception as e:
-                error_msg = str(e)
-                if "rate limit" in error_msg.lower() or "429" in error_msg:
-                    st.error("⏳ Erreur 429 : Limite de requêtes Mistral atteinte. Attendez quelques instants.")
+                error_str = str(e)
+                if "429" in error_str or "rate limit" in error_str.lower():
+                    st.error("⏳ Limite de requêtes Mistral atteinte. Attendez quelques minutes.")
                 else:
-                    st.error("Une erreur est survenue lors du traitement de votre question.")
-                    with st.expander("Détails de l'erreur"):
+                    st.error("❌ Erreur lors du traitement")
+                    with st.expander("Détails"):
                         st.code(traceback.format_exc())
 
-            # Afficher les graphiques si générés
-            if plt.get_fignums():
-                st.success("📊 Graphique généré :")
-                st.pyplot(plt.gcf())
-                plt.clf()
-
-    # --- SECTION BONUS : BOUTONS RAPIDES POUR TESTER ---
+    # --- BOUTONS RAPIDES ---
     st.write("---")
-    st.write("### Actions rapides")
-    col1, col2, col3 = st.columns(3)
+    st.write("### ⚡ Actions rapides")
+    
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        if st.button("📊 Stats globales"):
-            st.info(statistiques_globales())
+        if st.button("📊 Stats"):
+            st.info(stats_globales())
     
     with col2:
         if st.button("🔴 Heures critiques"):
-            st.warning(heures_avec_le_plus_de_retards())
+            st.warning(heures_critiques())
+    
+    with col3:
+        if st.button("🚂 Top retards"):
+            st.error(trains_critiques())
+    
+    with col4:
+        if st.button("📈 Direction N"):
+            st.success(ponctualite_par_direction("N"))
+
+else:
+    st.error("❌ Impossible de charger les données depuis Azure")
     
     with col3:
         if st.button("🚂 Top 5 retards"):
