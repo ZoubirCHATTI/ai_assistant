@@ -111,8 +111,7 @@ pandas_agent = create_pandas_dataframe_agent(
     df_sample,
     verbose=True,
     allow_dangerous_code= True,
-    handle_parsing_errors = True
-)
+    handle_parsing_errors = True)
 pandas_tool=Tool(
     name="Analyseur de dataframe Pandas",
     func= pandas_agent.invoke,
@@ -120,8 +119,7 @@ pandas_tool=Tool(
     Utilise cet outil pour toute question générale sur les données des trains.
     Il peut répondre à des questions sur les statistiques, filtrer des données, et même créer des graphiques (bar charts, line charts, etc.).
     Exemples de questions : 'combien de trains au total ?', 'fais-moi un bar chart des retards par jour de la semaine', 'quel est le retard moyen ?'.
-    """
-)
+    """)
 
 outils_personalisés = create_ferroviare_tools(df_sample)
 tous_les_outils = outils_personalisés + [pandas_tool]
