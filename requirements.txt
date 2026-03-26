@@ -11,3 +11,17 @@ langchain-experimental
 langgraph
 tabulate
  
+streamlit>=1.32.0
+pandas>=2.0.0
+matplotlib>=3.7.0
+seaborn>=0.12.0
+plotly>=5.18.0
+azure-storage-blob>=12.19.0
+openpyxl>=3.1.0
+langchain>=0.1.0
+langchain-core
+langchain-mistralai
+langchain-experimental
+python-dotenv
+numpy
+scipy
