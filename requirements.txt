@@ -6,3 +6,12 @@ azure-storage-blob
 matplotlib
 seaborn
 openpyxl
+streamlit
+pandas
+matplotlib
+seaborn
+azure-storage-blob
+langchain-experimental
+langchain-mistralai
+openpyxl
+tabulate
