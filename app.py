@@ -81,25 +81,29 @@ if df is not None:
 
 import traceback
 
+import traceback
+import requests
+
 if query:
     with st.spinner("L'IA analyse et génère le visuel..."):
-        response = None
         try:
-            # important : utiliser un dict
             response = agent.invoke({"input": query})
         except Exception as e:
-            # Erreur de parsing fréquente avec les agents ReAct
-            st.warning("L'agent a rencontré une erreur de parsing, "
-                       "mais le code Python a probablement été exécuté.")
-            st.text(str(e)[:500])  # pour debug
-            # NE PAS faire st.stop() ici
+            # Cas rate limit Mistral
+            if "rate limit exceeded" in str(e).lower() or "429" in str(e):
+                st.error("L'API Mistral a atteint sa limite de requêtes (429). "
+                         "Réessaie dans quelques instants ou réduis la fréquence des questions.")
+            else:
+                st.warning("L'agent a rencontré une erreur (parsing ou autre). "
+                           "Le code Python a peut‑être été exécuté malgré tout.")
+                st.text(str(e)[:500])
 
-        # Afficher éventuellement le texte retourné (si dispo)
+        # Si la requête a quand même réussi
         if isinstance(response, dict):
             st.markdown("#### Réponse de l'assistant :")
             st.write(response.get("output", response))
 
-        # ✅ Dans tous les cas, on essaie d'afficher la figure générée
+        # Affichage du graphique si présent
         if plt.get_fignums():
             st.pyplot(plt.gcf())
             plt.clf()
