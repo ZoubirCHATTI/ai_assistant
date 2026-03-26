@@ -169,4 +169,9 @@ if df is not None:
         if st.button("🚂 Top retards"):
             st.error(trains_critiques.invoke({}))
     
-    with c4
+    with c4:
+        if st.button("📈 Direction N"):
+            st.success(ponctualite_direction.invoke({"direction": "N"}))
+
+else:
+    st.error("❌ Impossible de charger les données depuis Azure")
