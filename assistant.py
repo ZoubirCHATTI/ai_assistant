@@ -12,16 +12,14 @@ Original file is located at
 
 
 # -*- coding: utf-8 -*-
-# -*- coding: utf-8 -*-
-# -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 from azure.storage.blob import BlobServiceClient
 from langchain_mistralai import ChatMistralAI
-from langchain.tools import Tool
-from langchain.agents import AgentExecutor, create_tool_calling_agent # <-- NOUVEAUX IMPORTS
-from langchain_core.prompts import ChatPromptTemplate # <-- NOUVEL IMPORT
+from langchain_core.tools import tool  # <-- IMPORT CORRIGÉ
+from langchain.agents import AgentExecutor, create_tool_calling_agent
+from langchain_core.prompts import ChatPromptTemplate
 import io
 import traceback
 
@@ -58,8 +56,10 @@ if df is not None:
     else:
         df_sample = df
 
-    # --- FONCTIONS MÉTIER ---
-    def ponctualite_par_direction(direction: str) -> str:
+    # --- OUTILS AVEC DÉCORATEUR @tool ---
+    @tool
+    def ponctualite_direction(direction: str) -> str:
+        """Calcule la ponctualité pour une direction donnée (N ou S)."""
         direction = direction.strip().upper()
         if direction not in ['N', 'S']:
             return "Erreur : direction doit être 'N' ou 'S'"
@@ -71,103 +71,102 @@ if df is not None:
         taux = (a_l_heure / total) * 100
         return f"Direction {direction} : {total} trains, {a_l_heure} à l'heure, ponctualité = {taux:.2f}%"
 
-    def heures_critiques(txt: str = "") -> str:
+    @tool
+    def heures_critiques() -> str:
+        """Identifie les 3 heures de la journée avec le plus de trains en retard."""
         df_retards = df_sample[df_sample['is_delayed'] == 1]
         if df_retards.empty:
-            return "Aucun retard"
+            return "Aucun retard détecté"
         top = df_retards['hour'].value_counts().nlargest(3)
-        result = "Top 3 heures critiques :\n"
+        result = "Top 3 heures avec le plus de retards :\n"
         for h, c in top.items():
             result += f"- {h}h : {c} trains\n"
         return result
 
-    def trains_critiques(txt: str = "") -> str:
+    @tool
+    def trains_critiques() -> str:
+        """Liste les 5 trains ayant accumulé le plus de retard en minutes."""
         top = df_sample.nlargest(5, 'delay_minutes')
-        result = "Top 5 retards :\n"
+        result = "Top 5 trains avec les plus longs retards :\n"
         for _, r in top.iterrows():
             result += f"- Train {r['train_id']} : {r['delay_minutes']} min\n"
         return result
 
-    def stats_globales(txt: str = "") -> str:
+    @tool
+    def statistiques_globales() -> str:
+        """Fournit les statistiques générales de ponctualité pour tous les trains."""
         total = len(df_sample)
         retards = df_sample['is_delayed'].sum()
         taux = ((total - retards) / total) * 100
         retard_moy = df_sample[df_sample['is_delayed'] == 1]['delay_minutes'].mean()
-        return (f"Stats :\n- Total : {total} trains\n- Retards : {retards} ({100*retards/total:.1f}%)\n"
-                f"- Ponctualité : {taux:.2f}%\n- Retard moyen : {retard_moy:.1f} min")
+        return (f"Statistiques globales :\n"
+                f"- Total : {total} trains\n"
+                f"- Retards : {retards} ({100*retards/total:.1f}%)\n"
+                f"- Ponctualité : {taux:.2f}%\n"
+                f"- Retard moyen : {retard_moy:.1f} min")
 
-    # --- TOOLS ---
-    tools = [
-        Tool(name="Ponctualite_Direction", func=ponctualite_par_direction,
-             description="Calcule la ponctualité pour une direction donnée. L'input doit être 'N' ou 'S'."),
-        Tool(name="Heures_Critiques", func=heures_critiques,
-             description="Identifie les heures de la journée avec le plus de retards. Aucun input spécifique requis."),
-        Tool(name="Trains_Critiques", func=trains_critiques,
-             description="Liste les 5 trains ayant accumulé le plus de retard en minutes. Aucun input spécifique requis."),
-        Tool(name="Statistiques_Globales", func=stats_globales,
-             description="Fournit les statistiques générales de ponctualité pour l'ensemble des trains. Aucun input spécifique requis.")
-    ]
+    # Liste des outils
+    tools = [ponctualite_direction, heures_critiques, trains_critiques, statistiques_globales]
 
     # --- AGENT ---
     llm = ChatMistralAI(model="mistral-small-latest", mistral_api_key=MISTRAL_KEY, temperature=0)
 
-    # 1. Créer le Prompt
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            ("system", "Tu es un assistant expert en analyse ferroviaire. Utilise les outils pour répondre aux questions. Réponds toujours en français."),
-            ("human", "{input}"),
-            ("placeholder", "{agent_scratchpad}"), # Nécessaire pour le fonctionnement interne de l'agent
-        ]
-    )
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", "Tu es un assistant expert en analyse ferroviaire. Utilise les outils disponibles pour répondre aux questions. Réponds toujours en français de manière claire et concise."),
+        ("human", "{input}"),
+        ("placeholder", "{agent_scratchpad}"),
+    ])
 
-    # 2. Créer l'Agent (logique qui choisit les outils)
     agent = create_tool_calling_agent(llm, tools, prompt)
-
-    # 3. Créer l'Executor (qui exécute l'agent et les outils)
-    agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+    agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True)
 
     # --- UI ---
-    st.write("### 📋 Aperçu")
+    st.write("### 📋 Aperçu des données")
     st.dataframe(df_sample.head(5))
     
-    st.write("### 💬 Question")
-    st.markdown("**Exemples :** *Ponctualité direction N ?* • *Heures critiques ?* • *Stats globales ?*")
+    st.write("### 💬 Posez votre question")
+    st.markdown("""
+    **Exemples :**
+    - Quelle est la ponctualité de la direction N ?
+    - Quelles sont les heures critiques ?
+    - Donne-moi les statistiques globales
+    - Quels sont les trains les plus en retard ?
+    """)
 
     query = st.text_input("Votre question :", key="q")
 
     if query:
-        with st.spinner("Réflexion..."):
+        with st.spinner("🤔 L'IA analyse votre question..."):
             try:
-                # Utiliser l'agent_executor pour invoquer
-                response = agent_executor.invoke({"input": query}) 
-                st.markdown("#### ✅ Réponse")
-                st.success(response.get("output", "Pas de réponse"))
+                response = agent_executor.invoke({"input": query})
+                st.markdown("#### ✅ Réponse de l'assistant")
+                st.success(response.get("output", "Pas de réponse disponible"))
                 
             except Exception as e:
-                if "429" in str(e) or "rate limit" in str(e).lower():
-                    st.error("⏳ Rate limit Mistral atteint")
+                error_str = str(e)
+                if "429" in error_str or "rate limit" in error_str.lower():
+                    st.error("⏳ Limite de requêtes API Mistral atteinte. Attendez quelques minutes.")
                 else:
-                    st.error("❌ Erreur")
-                    with st.expander("Détails"):
+                    st.error("❌ Une erreur est survenue")
+                    with st.expander("📋 Détails de l'erreur"):
                         st.code(traceback.format_exc())
 
-    # --- BOUTONS ---
+    # --- BOUTONS RAPIDES ---
     st.write("---")
     st.write("### ⚡ Actions rapides")
     
     c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        if st.button("📊 Stats"):
-            st.info(stats_globales())
-    with c2:
-        if st.button("🔴 Heures"):
-            st.warning(heures_critiques())
-    with c3:
-        if st.button("🚂 Retards"):
-            st.error(trains_critiques())
-    with c4:
-        if st.button("📈 Dir N"):
-            st.success(ponctualite_par_direction("N"))
-else:
-    st.error("❌ Impossible de charger les données")
     
+    with c1:
+        if st.button("📊 Stats globales"):
+            st.info(statistiques_globales.invoke({}))
+    
+    with c2:
+        if st.button("🔴 Heures critiques"):
+            st.warning(heures_critiques.invoke({}))
+    
+    with c3:
+        if st.button("🚂 Top retards"):
+            st.error(trains_critiques.invoke({}))
+    
+    with c4
