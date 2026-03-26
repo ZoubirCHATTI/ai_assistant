@@ -695,6 +695,96 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+# ═══════════════════════════════════════════════════════════════════════
+# PAGE : 💬 CHAT IA
+# ═══════════════════════════════════════════════════════════════════════
+
+elif page == "💬 Chat IA":
+    st.title("💬 Chat avec l'Assistant IA")
+    
+    if st.session_state.agent is None:
+        st.error("❌ L'agent IA n'est pas disponible. Vérifiez votre clé API Mistral.")
+    else:
+        st.markdown("""
+        Posez vos questions en français sur les données TER. L'IA analysera les données et vous donnera des réponses précises.
+        """)
+        
+        # Exemples de questions
+        with st.expander("💡 Exemples de questions", expanded=False):
+            st.markdown("""
+            - Quelle est la régularité moyenne globale ?
+            - Quelle région a la meilleure ponctualité ?
+            - Combien de trains ont été supprimés ?
+            - Montre-moi l'évolution de la régularité
+            - Quelles sont les 5 pires régions ?
+            - Donne-moi les statistiques sur les trains
+            """)
+        
+        # Affichage de l'historique
+        for message in st.session_state.chat_history:
+            if message['role'] == 'user':
+                st.markdown(f'<div class="chat-message user-message">👤 **Vous** : {message["content"]}</div>', unsafe_allow_html=True)
+            else:
+                st.markdown(f'<div class="chat-message assistant-message">🤖 **Assistant** : {message["content"]}</div>', unsafe_allow_html=True)
+        
+        # Zone de saisie
+        user_question = st.chat_input("Posez votre question ici...")
+        
+        if user_question:
+            # Ajouter la question à l'historique
+            st.session_state.chat_history.append({
+                'role': 'user',
+                'content': user_question
+            })
+            
+            # Obtenir la réponse de l'agent
+            with st.spinner("🤔 L'IA réfléchit..."):
+                try:
+                    response = st.session_state.agent.ask(user_question)
+                    
+                    # Ajouter la réponse à l'historique
+                    st.session_state.chat_history.append({
+                        'role': 'assistant',
+                        'content': response
+                    })
+                    
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"❌ Erreur : {e}")
+        
+        # Bouton pour effacer l'historique
+        if st.button("🗑️ Effacer l'historique"):
+            st.session_state.chat_history = []
+            st.rerun()
+
+# ═══════════════════════════════════════════════════════════════════════
+# PAGE : 🌦️ ANALYSE MÉTÉO
+# ═══════════════════════════════════════════════════════════════════════
+
+elif page == "🌦️ Analyse Météo":
+    st.title("🌦️ Analyse de l'Impact Météorologique")
+    
+    st.markdown("""
+    Cette section analyse la corrélation entre les conditions météorologiques et les retards/annulations de trains.
+    """)
+    
+    # Initialiser l'analyseur météo
+    if 'weather_analyzer' not in st.session_state:
+        try:
+            from weather_analyzer import WeatherAnalyzer
+            st.session_state.weather_analyzer = WeatherAnalyzer(df)
+        except Exception as e:
+            st.error(f"❌ Erreur : {e}")
+            st.session_state.weather_analyzer = None
+    
+    if st.session_state.weather_analyzer is None:
+        st.warning("⚠️ Module météo non disponible")
+    else:
+        st.success("✅ Module météo chargé")
+        
+        # Reste du code de la page météo...
+        st.info("Page en construction - Module météo opérationnel")
 elif page == "🌦️ Analyse Météo":
     st.title("🌦️ Analyse de l'Impact Météorologique")
     
