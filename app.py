@@ -56,7 +56,7 @@ if df is not None:
 
     # Prefix pour forcer l'IA à être rigoureuse et ne pas bugger le parser
     PREFIX = "You are a data expert. Use the pandas dataframe 'df'. If you create a chart, use matplotlib and conclude with 'Final Answer: Done.'"
-     if len(df) > 10000:
+    if len(df) > 10000:
         df_sample = df.sample(n=10000, random_state=42)
         st.warning("Utilisation d'un échantillon du DataFrame pour accélérer l'analyse.")
     else:
