@@ -1,3 +1,4 @@
+langchain
 streamlit
 pandas
 langchain-mistralai
