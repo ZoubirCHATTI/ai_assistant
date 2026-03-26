@@ -23,6 +23,24 @@ from visualizations import (
     plot_custom_visualization
 )
 from ai_agent import TERAnalysisAgent
+# Ajoute cet import avec les autres imports
+from weather_analyzer import WeatherAnalyzer
+with st.sidebar:
+    st.image("https://upload.wikimedia.org/wikipedia/commons/7/76/Logo_SNCF.svg", width=150)
+    st.title("Navigation")
+    
+    page = st.radio(
+        "Choisissez une page :",
+        [
+            "🏠 Accueil",
+            "📊 Dashboard",
+            "💬 Chat IA",
+            "🌦️ Analyse Météo",  # ← NOUVELLE PAGE
+            "📈 Visualisations Personnalisées",
+            "🔍 Explorateur de Données",
+            "⚙️ Paramètres"
+        ]
+    )
 
 # ═══════════════════════════════════════════════════════════════════════
 # CONFIGURATION DE LA PAGE
