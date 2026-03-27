@@ -1,18 +1,39 @@
 # -*- coding: utf-8 -*-
 """
 Agent IA pour l'analyse conversationnelle des données TER
+Utilise LangGraph pour une architecture moderne et stable
 """
 
 import streamlit as st
 import pandas as pd
+from typing import TypedDict, Annotated, Sequence
+import operator
+
 from langchain_mistralai import ChatMistralAI
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langchain_core.tools import tool
-from langchain.agents import AgentExecutor, create_tool_calling_agent
-from langchain_core.prompts import ChatPromptTemplate
+from langgraph.graph import StateGraph, END
+from langgraph.prebuilt import ToolNode
+
 from config import Config
 
+
+# ═══════════════════════════════════════════════════════════════════════
+# DÉFINITION DE L'ÉTAT DU GRAPH
+# ═══════════════════════════════════════════════════════════════════════
+
+class AgentState(TypedDict):
+    """État partagé dans le graph"""
+    messages: Annotated[Sequence[BaseMessage], operator.add]
+    df: pd.DataFrame  # Référence au DataFrame
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# CLASSE DE L'AGENT TER
+# ═══════════════════════════════════════════════════════════════════════
+
 class TERAnalysisAgent:
-    """Agent IA pour analyser les données TER"""
+    """Agent IA pour analyser les données TER avec LangGraph"""
     
     def __init__(self, df: pd.DataFrame):
         self.df = df
@@ -21,7 +42,15 @@ class TERAnalysisAgent:
             mistral_api_key=Config.MISTRAL_API_KEY,
             temperature=0
         )
-        self.agent_executor = self._create_agent()
+        
+        # Créer les outils
+        self.tools = self._create_tools()
+        
+        # Lier les outils au LLM
+        self.llm_with_tools = self.llm.bind_tools(self.tools)
+        
+        # Créer le graph
+        self.graph = self._create_graph()
     
     def _create_tools(self):
         """Crée les outils d'analyse disponibles pour l'agent"""
@@ -33,67 +62,115 @@ class TERAnalysisAgent:
             """Calcule le taux de régularité global sur toutes les données."""
             if 'taux_regularite' in df.columns:
                 avg = df['taux_regularite'].mean()
-                return f"Le taux de régularité moyen global est de {avg:.2f}%"
-            return "Colonne 'taux_regularite' non trouvée"
+                median = df['taux_regularite'].median()
+                min_val = df['taux_regularite'].min()
+                max_val = df['taux_regularite'].max()
+                return (f"Statistiques de régularité globale :\n"
+                       f"- Moyenne : {avg:.2f}%\n"
+                       f"- Médiane : {median:.2f}%\n"
+                       f"- Minimum : {min_val:.2f}%\n"
+                       f"- Maximum : {max_val:.2f}%")
+            return "Colonne 'taux_regularite' non trouvée dans les données"
         
         @tool
         def regularite_par_region(region: str) -> str:
-            """Calcule le taux de régularité pour une région spécifique."""
+            """
+            Calcule le taux de régularité pour une région spécifique.
+            
+            Args:
+                region: Nom de la région à analyser (ex: 'Île-de-France', 'Auvergne-Rhône-Alpes')
+            """
             if 'region' not in df.columns or 'taux_regularite' not in df.columns:
                 return "Colonnes nécessaires non trouvées"
             
             df_region = df[df['region'].str.contains(region, case=False, na=False)]
             if df_region.empty:
-                return f"Aucune donnée trouvée pour la région '{region}'"
+                regions_disponibles = df['region'].unique()[:5]
+                return (f"Aucune donnée trouvée pour la région '{region}'.\n"
+                       f"Régions disponibles (exemples) : {', '.join(regions_disponibles)}")
             
             avg = df_region['taux_regularite'].mean()
             nb_records = len(df_region)
-            return f"Région '{region}' : régularité moyenne de {avg:.2f}% sur {nb_records} enregistrements"
+            min_val = df_region['taux_regularite'].min()
+            max_val = df_region['taux_regularite'].max()
+            
+            return (f"Région '{region}' :\n"
+                   f"- Régularité moyenne : {avg:.2f}%\n"
+                   f"- Nombre d'enregistrements : {nb_records}\n"
+                   f"- Régularité min : {min_val:.2f}%\n"
+                   f"- Régularité max : {max_val:.2f}%")
         
         @tool
         def top_regions_regulieres(n: int = 5) -> str:
-            """Liste les N régions les plus régulières."""
+            """
+            Liste les N régions les plus régulières.
+            
+            Args:
+                n: Nombre de régions à lister (par défaut 5)
+            """
             if 'region' not in df.columns or 'taux_regularite' not in df.columns:
                 return "Colonnes nécessaires non trouvées"
             
             top = df.groupby('region')['taux_regularite'].mean().nlargest(n)
-            result = f"Top {n} régions les plus régulières :\n"
+            result = f"🏆 Top {n} régions les plus régulières :\n\n"
             for i, (region, taux) in enumerate(top.items(), 1):
-                result += f"{i}. {region} : {taux:.2f}%\n"
+                emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
+                result += f"{emoji} {region} : {taux:.2f}%\n"
             return result
         
         @tool
-        def pires_regions() -> str:
-            """Liste les 5 régions avec la pire régularité."""
+        def pires_regions(n: int = 5) -> str:
+            """
+            Liste les N régions avec la pire régularité.
+            
+            Args:
+                n: Nombre de régions à lister (par défaut 5)
+            """
             if 'region' not in df.columns or 'taux_regularite' not in df.columns:
                 return "Colonnes nécessaires non trouvées"
             
-            bottom = df.groupby('region')['taux_regularite'].mean().nsmallest(5)
-            result = "5 régions avec la pire régularité :\n"
+            bottom = df.groupby('region')['taux_regularite'].mean().nsmallest(n)
+            result = f"⚠️ Top {n} régions avec la pire régularité :\n\n"
             for i, (region, taux) in enumerate(bottom.items(), 1):
-                result += f"{i}. {region} : {taux:.2f}%\n"
+                result += f"{i}. {region} : {taux:.2f}% ⚠️\n"
             return result
         
         @tool
         def statistiques_trains() -> str:
-            """Donne des statistiques sur le nombre de trains."""
+            """Donne des statistiques complètes sur le nombre de trains."""
             stats = []
             
             if 'nombre_trains_prevus' in df.columns:
                 total_prevus = df['nombre_trains_prevus'].sum()
-                stats.append(f"Total trains prévus : {total_prevus:,.0f}")
+                stats.append(f"🚂 Total trains prévus : {total_prevus:,.0f}")
             
             if 'nombre_trains_circules' in df.columns:
                 total_circules = df['nombre_trains_circules'].sum()
-                stats.append(f"Total trains circulés : {total_circules:,.0f}")
+                stats.append(f"✅ Total trains circulés : {total_circules:,.0f}")
+                
+                if 'nombre_trains_prevus' in df.columns:
+                    taux_circulation = (total_circules / total_prevus * 100) if total_prevus > 0 else 0
+                    stats.append(f"📊 Taux de circulation : {taux_circulation:.2f}%")
             
             if 'nombre_trains_supprimes' in df.columns:
                 total_supprimes = df['nombre_trains_supprimes'].sum()
-                stats.append(f"Total trains supprimés : {total_supprimes:,.0f}")
+                stats.append(f"❌ Total trains supprimés : {total_supprimes:,.0f}")
+                
+                if 'nombre_trains_prevus' in df.columns:
+                    taux_suppression = (total_supprimes / total_prevus * 100) if total_prevus > 0 else 0
+                    stats.append(f"📉 Taux de suppression : {taux_suppression:.2f}%")
             
             if 'nombre_trains_retard' in df.columns:
                 total_retards = df['nombre_trains_retard'].sum()
-                stats.append(f"Total trains en retard : {total_retards:,.0f}")
+                stats.append(f"⏰ Total trains en retard : {total_retards:,.0f}")
+                
+                if 'nombre_trains_circules' in df.columns:
+                    taux_retard = (total_retards / total_circules * 100) if total_circules > 0 else 0
+                    stats.append(f"📊 Taux de retard : {taux_retard:.2f}%")
+            
+            if 'nombre_trains_a_l_heure' in df.columns:
+                total_a_l_heure = df['nombre_trains_a_l_heure'].sum()
+                stats.append(f"✅ Total trains à l'heure : {total_a_l_heure:,.0f}")
             
             return "\n".join(stats) if stats else "Données de trains non disponibles"
         
@@ -101,20 +178,85 @@ class TERAnalysisAgent:
         def evolution_temporelle() -> str:
             """Analyse l'évolution de la régularité dans le temps."""
             if 'date' not in df.columns or 'taux_regularite' not in df.columns:
-                return "Données temporelles non disponibles"
+                if 'annee' in df.columns and 'mois' in df.columns:
+                    # Analyse par année/mois
+                    evolution = df.groupby(['annee', 'mois'])['taux_regularite'].mean()
+                    first = evolution.iloc[0]
+                    last = evolution.iloc[-1]
+                    diff = last - first
+                    trend = "amélioration" if diff > 0 else "dégradation"
+                    return (f"📈 Évolution de la régularité :\n"
+                           f"- Période initiale : {first:.2f}%\n"
+                           f"- Période récente : {last:.2f}%\n"
+                           f"- Tendance : {trend} de {abs(diff):.2f} points")
+                return "Données temporelles insuffisantes pour l'analyse"
             
-            # Premier et dernier mois
+            # Tri par date
             df_sorted = df.sort_values('date')
-            first_month = df_sorted.iloc[0]['taux_regularite']
-            last_month = df_sorted.iloc[-1]['taux_regularite']
-            evolution = last_month - first_month
+            
+            # Première et dernière période
+            first_month_avg = df_sorted.head(30)['taux_regularite'].mean()
+            last_month_avg = df_sorted.tail(30)['taux_regularite'].mean()
+            evolution = last_month_avg - first_month_avg
             
             trend = "améliorée" if evolution > 0 else "dégradée"
             
-            return (f"Évolution de la régularité :\n"
-                   f"- Premier enregistrement : {first_month:.2f}%\n"
-                   f"- Dernier enregistrement : {last_month:.2f}%\n"
-                   f"- Tendance : {trend} ({evolution:+.2f} points)")
+            # Meilleur et pire mois
+            monthly_avg = df.groupby(pd.Grouper(key='date', freq='M'))['taux_regularite'].mean()
+            best_month = monthly_avg.idxmax()
+            worst_month = monthly_avg.idxmin()
+            
+            return (f"📈 Évolution temporelle de la régularité :\n\n"
+                   f"- Début de période : {first_month_avg:.2f}%\n"
+                   f"- Fin de période : {last_month_avg:.2f}%\n"
+                   f"- Tendance : {trend} ({evolution:+.2f} points)\n\n"
+                   f"🏆 Meilleur mois : {best_month.strftime('%B %Y')} ({monthly_avg.max():.2f}%)\n"
+                   f"⚠️ Pire mois : {worst_month.strftime('%B %Y')} ({monthly_avg.min():.2f}%)")
+        
+        @tool
+        def comparer_periodes(annee1: int, annee2: int) -> str:
+            """
+            Compare la régularité entre deux années.
+            
+            Args:
+                annee1: Première année à comparer
+                annee2: Deuxième année à comparer
+            """
+            if 'annee' not in df.columns or 'taux_regularite' not in df.columns:
+                return "Colonne 'annee' ou 'taux_regularite' non trouvée"
+            
+            df_y1 = df[df['annee'] == annee1]
+            df_y2 = df[df['annee'] == annee2]
+            
+            if df_y1.empty or df_y2.empty:
+                return f"Données insuffisantes pour {annee1} ou {annee2}"
+            
+            avg1 = df_y1['taux_regularite'].mean()
+            avg2 = df_y2['taux_regularite'].mean()
+            diff = avg2 - avg1
+            
+            evolution = "amélioration" if diff > 0 else "dégradation"
+            
+            return (f"📊 Comparaison {annee1} vs {annee2} :\n\n"
+                   f"- {annee1} : {avg1:.2f}%\n"
+                   f"- {annee2} : {avg2:.2f}%\n"
+                   f"- Évolution : {evolution} de {abs(diff):.2f} points ({diff:+.2f}%)")
+        
+        @tool
+        def liste_regions_disponibles() -> str:
+            """Liste toutes les régions présentes dans les données."""
+            if 'region' not in df.columns:
+                return "Colonne 'region' non trouvée"
+            
+            regions = sorted(df['region'].unique())
+            nb_regions = len(regions)
+            
+            result = f"🗺️ {nb_regions} régions disponibles dans les données :\n\n"
+            for region in regions:
+                nb_records = len(df[df['region'] == region])
+                result += f"- {region} ({nb_records} enregistrements)\n"
+            
+            return result
         
         return [
             calculer_regularite_globale,
@@ -122,40 +264,83 @@ class TERAnalysisAgent:
             top_regions_regulieres,
             pires_regions,
             statistiques_trains,
-            evolution_temporelle
+            evolution_temporelle,
+            comparer_periodes,
+            liste_regions_disponibles
         ]
     
-    def _create_agent(self):
-        """Crée l'agent conversationnel"""
+    def _create_graph(self):
+        """Crée le graph LangGraph"""
         
-        tools = self._create_tools()
+        # Définir le graph
+        workflow = StateGraph(AgentState)
         
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", """Tu es un assistant expert en analyse ferroviaire pour la SNCF. 
-            Tu aides les data analysts à comprendre les données de ponctualité des TER.
+        # Nœud de l'agent
+        def call_model(state: AgentState):
+            messages = state["messages"]
+            response = self.llm_with_tools.invoke(messages)
+            return {"messages": [response]}
+        
+        # Nœud des outils
+        tool_node = ToolNode(self.tools)
+        
+        # Fonction de routage
+        def should_continue(state: AgentState):
+            messages = state["messages"]
+            last_message = messages[-1]
             
-            Utilise les outils disponibles pour répondre précisément aux questions.
-            Réponds toujours en français de manière claire et structurée.
-            Si une question nécessite plusieurs outils, utilise-les tous.
-            Fournis des chiffres précis et des insights actionnables."""),
-            ("human", "{input}"),
-            ("placeholder", "{agent_scratchpad}"),
-        ])
+            # Si le LLM appelle un outil, continuer
+            if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
+                return "tools"
+            # Sinon, terminer
+            return END
         
-        agent = create_tool_calling_agent(self.llm, tools, prompt)
+        # Ajouter les nœuds au graph
+        workflow.add_node("agent", call_model)
+        workflow.add_node("tools", tool_node)
         
-        return AgentExecutor(
-            agent=agent,
-            tools=tools,
-            verbose=True,
-            handle_parsing_errors=True,
-            max_iterations=5
+        # Définir les edges
+        workflow.set_entry_point("agent")
+        workflow.add_conditional_edges(
+            "agent",
+            should_continue,
+            {
+                "tools": "tools",
+                END: END
+            }
         )
+        workflow.add_edge("tools", "agent")
+        
+        # Compiler le graph
+        return workflow.compile()
     
     def ask(self, question: str) -> str:
-        """Pose une question à l'agent"""
+        """
+        Pose une question à l'agent
+        
+        Args:
+            question: Question en langage naturel
+            
+        Returns:
+            Réponse de l'agent
+        """
         try:
-            response = self.agent_executor.invoke({"input": question})
-            return response.get("output", "Désolé, je n'ai pas pu générer de réponse.")
+            # Créer le message initial
+            initial_state = {
+                "messages": [HumanMessage(content=question)],
+                "df": self.df
+            }
+            
+            # Exécuter le graph
+            result = self.graph.invoke(initial_state)
+            
+            # Extraire la réponse finale
+            final_message = result["messages"][-1]
+            
+            if hasattr(final_message, 'content'):
+                return final_message.content
+            else:
+                return str(final_message)
+            
         except Exception as e:
-            return f"❌ Erreur : {str(e)}"
+            return f"❌ Erreur lors du traitement de la question : {str(e)}"
