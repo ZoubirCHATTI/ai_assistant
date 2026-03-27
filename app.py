@@ -13,8 +13,7 @@ from datetime import datetime
 
 # Import des modules locaux
 from config import Config, check_config
-#from data_loader import load_data_from_azure, get_data_summary
-from data_loader import TERDataLoader  # ✅ Import correct
+from data_loader import load_data_from_azure, get_data_summary
 from visualizations import (
     plot_kpi_cards,
     plot_regularite_evolution,
@@ -24,221 +23,239 @@ from visualizations import (
     plot_custom_visualization
 )
 from ai_agent import TERAnalysisAgent
-# Ajoute cet import avec les autres imports
-from weather_analyzer import WeatherAnalyzer
-from data_loader import TERDataLoader  
 
-# Au début de app.py, après les imports
-
+# ═══════════════════════════════════════════════════════════════════════
 # CONFIGURATION DE LA PAGE
 # ═══════════════════════════════════════════════════════════════════════
 
 st.set_page_config(
-    page_title="TER Analysis Dashboard",
-    page_icon="🚆",
-    layout="wide",
+    page_title=Config.APP_TITLE,
+    page_icon=Config.APP_ICON,
+    layout=Config.LAYOUT,
     initial_sidebar_state="expanded"
 )
 
-# CSS personnalisé
+# Style CSS personnalisé
 st.markdown("""
-<style>
-.chat-message {
-    padding: 1rem;
-    border-radius: 0.5rem;
-    margin-bottom: 1rem;
-    display: flex;
-    flex-direction: column;
-}
-.user-message {
-    background-color: #e3f2fd;
-    border-left: 4px solid #2196f3;
-}
-.assistant-message {
-    background-color: #f5f5f5;
-    border-left: 4px solid #4caf50;
-}
-</style>
+    <style>
+    .main-header {
+        font-size: 3rem;
+        font-weight: bold;
+        color: #1f77b4;
+        text-align: center;
+        padding: 1rem 0;
+    }
+    .sub-header {
+        font-size: 1.2rem;
+        color: #666;
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    .stMetric {
+        background-color: #f0f2f6;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .chat-message {
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin: 0.5rem 0;
+    }
+    .user-message {
+        background-color: #e3f2fd;
+        border-left: 4px solid #1976d2;
+    }
+    .assistant-message {
+        background-color: #f1f8e9;
+        border-left: 4px solid #689f38;
+    }
+    </style>
 """, unsafe_allow_html=True)
+
+# ═══════════════════════════════════════════════════════════════════════
+# VÉRIFICATION DE LA CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════
+
+check_config()
 
 # ═══════════════════════════════════════════════════════════════════════
 # INITIALISATION DE LA SESSION
 # ═══════════════════════════════════════════════════════════════════════
 
-if 'chat_history' not in st.session_state:
-    st.session_state.chat_history = []
-
-if 'agent' not in st.session_state:
+if 'data_loaded' not in st.session_state:
+    st.session_state.data_loaded = False
+    st.session_state.df = None
     st.session_state.agent = None
-
-if 'df_enriched' not in st.session_state:
-    st.session_state.df_enriched = None
-
-if 'current_df_hash' not in st.session_state:
-    st.session_state.current_df_hash = None
-
-# ═══════════════════════════════════════════════════════════════════════
-# CHARGEMENT DES DONNÉES
-# ═══════════════════════════════════════════════════════════════════════
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def load_ter_data():
-    """Charge les données TER avec cache (1 heure)"""
-    try:
-        loader = TERDataLoader()
-        df = loader.load_data()
-        return df
-    except Exception as e:
-        st.error(f"❌ Erreur lors du chargement des données : {e}")
-        import traceback
-        st.code(traceback.format_exc())
-        return None
-
-# Charger les données
-with st.spinner("⏳ Chargement des données TER depuis l'API SNCF..."):
-    df = load_ter_data()
-
-# Vérifier que les données sont chargées
-if df is None or len(df) == 0:
-    st.error("❌ Impossible de charger les données TER")
-    st.info("""
-    **Causes possibles :**
-    - L'API SNCF est temporairement indisponible
-    - Problème de connexion internet
-    - Le dataset n'existe plus ou a changé d'URL
-    
-    **Solution :**
-    - Vérifiez votre connexion internet
-    - Réessayez dans quelques minutes
-    - Contactez le support si le problème persiste
-    """)
-    st.stop()
-
-# Afficher un résumé
-st.success(f"✅ {len(df):,} enregistrements chargés depuis l'API SNCF")
-
-# Afficher des infos sur les données
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    if 'taux_regularite' in df.columns:
-        avg_reg = df['taux_regularite'].mean()
-        st.metric("📊 Régularité moyenne", f"{avg_reg:.2f}%")
-
-with col2:
-    if 'region' in df.columns:
-        nb_regions = df['region'].nunique()
-        st.metric("🗺️ Régions", nb_regions)
-
-with col3:
-    if 'date' in df.columns:
-        date_min = df['date'].min()
-        date_max = df['date'].max()
-        nb_mois = (date_max.year - date_min.year) * 12 + (date_max.month - date_min.month) + 1
-        st.metric("📅 Période", f"{nb_mois} mois")
-
-with col4:
-    st.metric("📦 Enregistrements", f"{len(df):,}")
-
-st.markdown("---")
-
-# ═══════════════════════════════════════════════════════════════════════
-# INITIALISATION DES ANALYSEURS
-# ═══════════════════════════════════════════════════════════════════════
-
-# Initialiser l'analyseur météo
-weather_analyzer = WeatherAnalyzer(df)
+    st.session_state.chat_history = []
 
 # ═══════════════════════════════════════════════════════════════════════
 # SIDEBAR - NAVIGATION
 # ═══════════════════════════════════════════════════════════════════════
 
-st.sidebar.title("🚆 TER Analysis Dashboard")
-st.sidebar.markdown("---")
-
-page = st.sidebar.radio(
-    "Navigation",
-    ["🏠 Accueil", "📊 Vue d'ensemble", "🌦️ Analyse Météo", "💬 Chat IA"],
-    index=0
-)
-
-st.sidebar.markdown("---")
-st.sidebar.info("""
-**À propos**
-
-Dashboard d'analyse de la régularité des trains TER en France.
-
-**Données :** API SNCF Open Data  
-**IA :** Mistral AI  
-**Météo :** Open-Meteo
-""")
-
-# ═══════════════════════════════════════════════════════════════════════
-# PAGES
-# ═══════════════════════════════════════════════════════════════════════
-
-# Page Accueil
-if page == "🏠 Accueil":
-    st.title("🚆 Dashboard d'Analyse TER")
+with st.sidebar:
+    st.image("https://upload.wikimedia.org/wikipedia/commons/7/76/Logo_SNCF.svg", width=150)
+    st.title("Navigation")
     
-    st.markdown("""
-    ## Bienvenue sur le Dashboard d'Analyse de la Régularité des TER
-    
-    Ce tableau de bord vous permet d'analyser la ponctualité des trains TER en France.
-    
-    ### 📊 Fonctionnalités disponibles :
-    
-    #### 🏠 **Accueil**
-    - Vue d'ensemble du projet
-    - Informations sur les données
-    
-    #### 📊 **Vue d'ensemble**
-    - Statistiques générales de régularité
-    - Comparaison par région
-    - Évolution temporelle
-    - Visualisations interactives
-    
-    #### 🌦️ **Analyse Météo**
-    - Enrichissement des données avec la météo
-    - Impact de la neige, du vent, des précipitations
-    - Corrélation météo-régularité
-    
-    #### 💬 **Chat IA**
-    - Posez vos questions en langage naturel
-    - Analyses personnalisées
-    - Réponses basées sur les données réelles
-    
-    ### 🚀 Pour commencer :
-    
-    1. Explorez la **Vue d'ensemble** pour voir les statistiques globales
-    2. Enrichissez avec la **Météo** pour des analyses approfondies
-    3. Utilisez le **Chat IA** pour des questions spécifiques
-    """)
+    page = st.radio(
+        "Choisissez une page :",
+        [
+            "🏠 Accueil",
+            "📊 Dashboard",
+            "💬 Chat IA",
+            "📈 Visualisations Personnalisées",
+            "🔍 Explorateur de Données",
+            "⚙️ Paramètres"
+        ]
+    )
     
     st.markdown("---")
     
-    # Afficher quelques stats rapides
-    st.subheader("📈 Aperçu rapide des données")
+    # Bouton de rechargement des données
+    if st.button("🔄 Recharger les données", use_container_width=True):
+        st.cache_data.clear()
+        st.session_state.data_loaded = False
+        st.rerun()
     
-    if 'taux_regularite' in df.columns and 'region' in df.columns:
-        col1, col2 = st.columns(2)
+    st.markdown("---")
+    st.caption(f"🕒 Dernière mise à jour : {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+    st.caption("🔒 Données sécurisées via Azure Blob Storage")
+
+# ═══════════════════════════════════════════════════════════════════════
+# CHARGEMENT DES DONNÉES
+# ═══════════════════════════════════════════════════════════════════════
+
+if not st.session_state.data_loaded:
+    with st.spinner("🚂 Chargement des données TER depuis Azure..."):
+        df = load_data_from_azure()
         
-        with col1:
-            # Top 5 régions
-            top5 = df.groupby('region')['taux_regularite'].mean().nlargest(5)
-            st.write("**🏆 Top 5 régions les plus régulières**")
-            for i, (region, taux) in enumerate(top5.items(), 1):
-                st.write(f"{i}. {region}: {taux:.2f}%")
+        if df is not None:
+            st.session_state.df = df
+            st.session_state.data_loaded = True
+            
+            # Initialiser l'agent IA
+            try:
+                st.session_state.agent = TERAnalysisAgent(df)
+            except Exception as e:
+                st.warning(f"⚠️ Agent IA non disponible : {e}")
+                st.session_state.agent = None
+            
+            st.success("✅ Données chargées avec succès !")
+        else:
+            st.error("❌ Impossible de charger les données. Vérifiez votre configuration Azure.")
+            st.stop()
+
+df = st.session_state.df
+
+# ═══════════════════════════════════════════════════════════════════════
+# PAGE : 🏠 ACCUEIL
+# ═══════════════════════════════════════════════════════════════════════
+
+if page == "🏠 Accueil":
+    st.markdown('<div class="main-header">🚆 Assistant IA - Analyse TER SNCF</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Votre compagnon intelligent pour l\'analyse des données ferroviaires</div>', unsafe_allow_html=True)
+    
+    # Résumé des données
+    summary = get_data_summary(df)
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.info(f"""
+        ### 📊 Dataset
+        - **{summary['total_rows']:,}** enregistrements
+        - **{summary['total_columns']}** colonnes
+        - **{summary['memory_usage']:.2f}** MB en mémoire
+        """)
+    
+    with col2:
+        if summary['date_range']:
+            min_date, max_date = summary['date_range']
+            st.success(f"""
+            ### 📅 Période
+            - **Du** {min_date.strftime('%d/%m/%Y')}
+            - **Au** {max_date.strftime('%d/%m/%Y')}
+            - **{(max_date - min_date).days}** jours
+            """)
+        else:
+            st.success("### 📅 Période\nDonnées disponibles")
+    
+    with col3:
+        if summary['regions']:
+            st.warning(f"""
+            ### 🗺️ Couverture
+            - **{len(summary['regions'])}** régions
+            - Analyse nationale
+            - Données temps réel
+            """)
+        else:
+            st.warning("### 🗺️ Couverture\nAnalyse disponible")
+    
+    st.markdown("---")
+    
+    # Fonctionnalités
+    st.subheader("✨ Fonctionnalités de l'Assistant")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("""
+        #### 📊 Dashboard Interactif
+        - KPIs en temps réel
+        - Graphiques dynamiques
+        - Analyse par région et période
+        - Export des visualisations
         
-        with col2:
-            # Bottom 5 régions
-            bottom5 = df.groupby('region')['taux_regularite'].mean().nsmallest(5)
-            st.write("**⚠️ Top 5 régions les moins régulières**")
-            for i, (region, taux) in enumerate(bottom5.items(), 1):
-                st.write(f"{i}. {region}: {taux:.2f}%")
-
-
-
+        #### 💬 Chat IA Conversationnel
+        - Questions en langage naturel
+        - Réponses contextualisées
+        - Historique des conversations
+        - Suggestions intelligentes
+        """)
+    
+    with col2:
+        st.markdown("""
+        #### 📈 Visualisations Personnalisées
+        - Créateur de graphiques
+        - Multiples types de charts
+        - Filtres avancés
+        - Exports haute résolution
+        
+        #### 🔍 Explorateur de Données
+        - Filtrage multi-critères
+        - Recherche avancée
+        - Export CSV/Excel
+        - Statistiques détaillées
+        """)
+    
+    st.markdown("---")
+    
+    # Guide de démarrage rapide
+    st.subheader("🚀 Démarrage Rapide")
+    
+    with st.expander("📘 Comment utiliser l'Assistant ?", expanded=True):
+        st.markdown("""
+        ### 1️⃣ Explorez le Dashboard
+        Accédez à la page **📊 Dashboard** pour voir une vue d'ensemble des KPIs et métriques clés.
+        
+        ### 2️⃣ Posez vos Questions
+        Allez dans **💬 Chat IA** et posez vos questions en français :
+        - "Quelle est la régularité moyenne ?"
+        - "Quelles sont les pires régions ?"
+        - "Combien de trains ont été supprimés ?"
+        
+        ### 3️⃣ Créez des Visualisations
+        Dans **📈 Visualisations Personnalisées**, créez vos propres graphiques :
+        - Choisissez le type de graphique
+        - Sélectionnez les colonnes
+        - Appliquez des filtres
+        
+        ### 4️⃣ Explorez les Données
+        Utilisez **🔍 Explorateur de Données** pour :
+        - Filtrer par région, date, etc.
+        - Rechercher des valeurs spécifiques
+        - Exporter vos sélections
+        """)
 
 # ═══════════════════════════════════════════════════════════════════════
 # PAGE : 📊 DASHBOARD
@@ -311,359 +328,147 @@ elif page == "📊 Dashboard":
 # ═══════════════════════════════════════════════════════════════════════
 # PAGE : 💬 CHAT IA
 # ═══════════════════════════════════════════════════════════════════════
+
 elif page == "💬 Chat IA":
     st.title("💬 Chat avec l'Assistant IA")
     
-    st.markdown("""
-    Posez vos questions en français sur les données TER. L'IA peut analyser les données, générer des graphiques et vous donner des réponses précises.
-    """)
-    
-    # ═══════════════════════════════════════════════════════════════
-    # VÉRIFICATION DE LA CLÉ API
-    # ═══════════════════════════════════════════════════════════════
-    
-    if not Config.MISTRAL_API_KEY:
-        st.error("❌ **Clé API Mistral non configurée**")
-        st.info("""
-        **Pour configurer la clé API :**
-        
-        **En local :**
-        1. Créez un fichier `.env` dans le dossier du projet
-        2. Ajoutez : `MISTRAL_API_KEY=votre_clé_ici`
-        3. Obtenez une clé gratuite sur : https://console.mistral.ai/
-        
-        **Sur Streamlit Cloud :**
-        1. Allez dans **Settings** → **Secrets**
-        2. Ajoutez : `MISTRAL_API_KEY = "votre_clé_ici"`
-        3. Redémarrez l'application
-        """)
-        st.stop()
-    
-    # ═══════════════════════════════════════════════════════════════
-    # INITIALISATION DE L'AGENT IA
-    # ═══════════════════════════════════════════════════════════════
-    
-    # Utiliser les données enrichies si disponibles, sinon les données de base
-    agent_df = st.session_state.df_enriched if st.session_state.df_enriched is not None else df
-    
-    # Calculer un hash du DataFrame pour détecter les changements
-    df_hash = hash(str(agent_df.shape) + str(agent_df.columns.tolist()))
-    
-    # Créer ou recréer l'agent si nécessaire
-    if (st.session_state.agent is None or 
-        st.session_state.current_df_hash != df_hash):
-        
-        try:
-            with st.spinner("🤖 Initialisation de l'agent IA..."):
-                st.session_state.agent = TERAnalysisAgent(agent_df)
-                st.session_state.current_df_hash = df_hash
-            
-            st.success("✅ Agent IA prêt !")
-        
-        except Exception as e:
-            st.error(f"❌ **Erreur lors de l'initialisation de l'agent**")
-            st.error(f"**Détail :** {str(e)}")
-            
-            with st.expander("🔍 Informations de débogage"):
-                import traceback
-                st.code(traceback.format_exc())
-            
-            st.stop()
-    
-    # ═══════════════════════════════════════════════════════════════
-    # BOUTON DE RECHARGEMENT
-    # ═══════════════════════════════════════════════════════════════
-    
-    col_header1, col_header2 = st.columns([4, 1])
-    
-    with col_header2:
-        if st.button("🔄 Recharger", help="Réinitialiser l'agent IA"):
-            st.session_state.agent = None
-            st.session_state.current_df_hash = None
-            st.rerun()
-    
-    # ═══════════════════════════════════════════════════════════════
-    # EXEMPLES DE QUESTIONS
-    # ═══════════════════════════════════════════════════════════════
-    
-    with st.expander("💡 Exemples de questions", expanded=False):
+    if st.session_state.agent is None:
+        st.error("❌ L'agent IA n'est pas disponible. Vérifiez votre clé API Mistral.")
+    else:
         st.markdown("""
-        **📊 Questions générales :**
-        - Quelle est la régularité moyenne globale ?
-        - Combien de trains ont été supprimés ?
-        - Donne-moi un résumé des données
-        
-        **📈 Questions avec graphiques :**
-        - Montre-moi un graphique de la régularité par région
-        - Trace l'évolution de la ponctualité dans le temps
-        - Compare les 5 meilleures régions en graphique
-        - Dessine un histogramme des retards
-        - Fais un camembert des suppressions par région
-        
-        **🗺️ Questions par région :**
-        - Quelle région a la meilleure ponctualité ?
-        - Quelles sont les 5 pires régions ?
-        - Compare la Bretagne et la Normandie
-        
-        **🌦️ Questions météo (si données enrichies) :**
-        - Quel est l'impact de la neige sur les retards ?
-        - Analyse l'impact du vent fort avec un graphique
+        Posez vos questions en français sur les données TER. L'IA analysera les données et vous donnera des réponses précises.
         """)
-    
-    st.markdown("---")
-    
-    # ═══════════════════════════════════════════════════════════════
-    # AFFICHAGE DE L'HISTORIQUE
-    # ═══════════════════════════════════════════════════════════════
-    
-    # Container pour l'historique
-    chat_container = st.container()
-    
-    with chat_container:
-        if not st.session_state.chat_history:
-            st.info("👋 Bonjour ! Posez-moi une question sur les données TER. Je peux générer des graphiques pour vous !")
-        else:
-            for idx, message in enumerate(st.session_state.chat_history):
-                if message['role'] == 'user':
-                    st.markdown(
-                        f'<div class="chat-message user-message">'
-                        f'👤 **Vous** : {message["content"]}'
-                        f'</div>', 
-                        unsafe_allow_html=True
-                    )
-                else:
-                    # Afficher le texte de la réponse
-                    st.markdown(
-                        f'<div class="chat-message assistant-message">'
-                        f'🤖 **Assistant** : {message["content"]}'
-                        f'</div>', 
-                        unsafe_allow_html=True
-                    )
+        
+        # Exemples de questions
+        with st.expander("💡 Exemples de questions", expanded=False):
+            st.markdown("""
+            - Quelle est la régularité moyenne globale ?
+            - Quelle région a la meilleure ponctualité ?
+            - Combien de trains ont été supprimés ?
+            - Montre-moi l'évolution de la régularité
+            - Quelles sont les 5 pires régions ?
+            - Donne-moi les statistiques sur les trains
+            """)
+        
+        # Affichage de l'historique
+        for message in st.session_state.chat_history:
+            if message['role'] == 'user':
+                st.markdown(f'<div class="chat-message user-message">👤 **Vous** : {message["content"]}</div>', unsafe_allow_html=True)
+            else:
+                st.markdown(f'<div class="chat-message assistant-message">🤖 **Assistant** : {message["content"]}</div>', unsafe_allow_html=True)
+        
+        # Zone de saisie
+        user_question = st.chat_input("Posez votre question ici...")
+        
+        if user_question:
+            # Ajouter la question à l'historique
+            st.session_state.chat_history.append({
+                'role': 'user',
+                'content': user_question
+            })
+            
+            # Obtenir la réponse de l'agent
+            with st.spinner("🤔 L'IA réfléchit..."):
+                try:
+                    response = st.session_state.agent.ask(user_question)
                     
-                    # Afficher le graphique si présent
-                    if 'figure' in message and message['figure'] is not None:
-                        st.plotly_chart(message['figure'], use_container_width=True, key=f"chart_{idx}")
-    
-    # ═══════════════════════════════════════════════════════════════
-    # ZONE DE SAISIE
-    # ═══════════════════════════════════════════════════════════════
-    
-    user_question = st.chat_input("Posez votre question ici...")
-    
-    if user_question:
-        # Ajouter la question à l'historique
-        st.session_state.chat_history.append({
-            'role': 'user',
-            'content': user_question
-        })
+                    # Ajouter la réponse à l'historique
+                    st.session_state.chat_history.append({
+                        'role': 'assistant',
+                        'content': response
+                    })
+                    
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"❌ Erreur : {e}")
         
-        # Obtenir la réponse de l'agent
-        with st.spinner("🤔 L'IA réfléchit et génère des visualisations..."):
-            try:
-                # Détecter si l'utilisateur demande un graphique
-                plot_keywords = [
-                    'graphique', 'graph', 'courbe', 'trace', 'dessine', 'montre',
-                    'visualise', 'affiche', 'camembert', 'histogramme', 'barres',
-                    'plot', 'chart', 'diagramme', 'évolution', 'compare', 'comparaison'
-                ]
-                
-                should_plot = any(keyword in user_question.lower() for keyword in plot_keywords)
-                
-                # Obtenir la réponse textuelle
-                response = st.session_state.agent.ask(user_question)
-                
-                # Créer le message de réponse
-                response_message = {
-                    'role': 'assistant',
-                    'content': response,
-                    'figure': None
-                }
-                
-                # Générer un graphique si demandé
-                if should_plot:
-                    try:
-                        fig = generate_chart_from_question(user_question, agent_df)
-                        if fig is not None:
-                            response_message['figure'] = fig
-                            response_message['content'] += "\n\n📊 *Voici le graphique correspondant :*"
-                    except Exception as plot_error:
-                        response_message['content'] += f"\n\n⚠️ *Je n'ai pas pu générer le graphique : {str(plot_error)}*"
-                
-                # Ajouter la réponse à l'historique
-                st.session_state.chat_history.append(response_message)
-                
-            except Exception as e:
-                error_response = {
-                    'role': 'assistant',
-                    'content': f"❌ **Erreur :** {str(e)}\n\nDésolé, je n'ai pas pu traiter votre question. Essayez de la reformuler.",
-                    'figure': None
-                }
-                st.session_state.chat_history.append(error_response)
-        
-        st.rerun()
-    
-    # ═══════════════════════════════════════════════════════════════
-    # BOUTONS D'ACTION
-    # ═══════════════════════════════════════════════════════════════
-    
-    st.markdown("---")
-    
-    col1, col2, col3 = st.columns([1, 1, 2])
-    
-    with col1:
+        # Bouton pour effacer l'historique
         if st.button("🗑️ Effacer l'historique"):
             st.session_state.chat_history = []
             st.rerun()
+
+# ═══════════════════════════════════════════════════════════════════════
+# PAGE : 📈 VISUALISATIONS PERSONNALISÉES
+# ═══════════════════════════════════════════════════════════════════════
+
+elif page == "📈 Visualisations Personnalisées":
+    st.title("📈 Créateur de Visualisations")
+    
+    st.markdown("Créez vos propres graphiques en sélectionnant les paramètres ci-dessous.")
+    
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        st.subheader("⚙️ Configuration")
+        
+        # Type de graphique
+        chart_type = st.selectbox(
+            "Type de graphique",
+            ["Ligne", "Barre", "Scatter", "Histogramme", "Box Plot"]
+        )
+        
+        # Colonnes disponibles
+        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+        all_cols = df.columns.tolist()
+        
+        # Sélection des axes
+        x_col = st.selectbox("Axe X", all_cols)
+        
+        if chart_type != "Histogramme":
+            y_col = st.selectbox("Axe Y", numeric_cols)
+        else:
+            y_col = None
+        
+        # Couleur (optionnel)
+        use_color = st.checkbox("Ajouter une dimension de couleur")
+        if use_color:
+            categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
+            color_col = st.selectbox("Colonne de couleur", categorical_cols)
+        else:
+            color_col = None
+        
+        # Filtres
+        st.markdown("---")
+        st.subheader("🔍 Filtres")
+        
+        if 'region' in df.columns:
+            regions = ['Toutes'] + sorted(df['region'].unique().tolist())
+            filter_region = st.multiselect("Régions", regions, default=['Toutes'])
+        else:
+            filter_region = ['Toutes']
+        
+        # Bouton de génération
+        generate_viz = st.button("🎨 Générer le graphique", use_container_width=True)
     
     with col2:
-        nb_messages = len([m for m in st.session_state.chat_history if m['role'] == 'user'])
-        st.metric("💬 Questions", nb_messages)
-    
-    with col3:
-        if st.session_state.df_enriched is not None:
-            st.success("✅ Données enrichies avec météo disponibles")
-        else:
-            st.info("ℹ️ Utilisez 'Analyse Météo' pour enrichir les données")
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# FONCTION DE GÉNÉRATION DE GRAPHIQUES
-# ═══════════════════════════════════════════════════════════════════════
-
-    def generate_chart_from_question(question: str, df: pd.DataFrame):
-        """
-        Génère un graphique en fonction de la question posée
+        st.subheader("📊 Résultat")
         
-        Args:
-            question: Question de l'utilisateur
-            df: DataFrame avec les données
+        if generate_viz:
+            # Appliquer les filtres
+            df_viz = df.copy()
             
-        Returns:
-            Figure Plotly ou None
-        """
-        question_lower = question.lower()
-        
-        # Vérifier les colonnes nécessaires
-        if 'region' not in df.columns or 'taux_regularite' not in df.columns:
-            return None
-        
-        # ═══════════════════════════════════════════════════════════════
-        # GRAPHIQUE PAR RÉGION
-        # ═══════════════════════════════════════════════════════════════
-        
-        if any(word in question_lower for word in ['région', 'region', 'compare', 'meilleur', 'pire']):
-            # Calculer la moyenne par région
-            region_stats = df.groupby('region')['taux_regularite'].mean().sort_values(ascending=False)
+            if 'Toutes' not in filter_region and 'region' in df.columns:
+                df_viz = df_viz[df_viz['region'].isin(filter_region)]
             
-            # Limiter aux top N si demandé
-            if 'top 5' in question_lower or '5 meilleur' in question_lower:
-                region_stats = region_stats.head(5)
-            elif 'top 10' in question_lower or '10 meilleur' in question_lower:
-                region_stats = region_stats.head(10)
-            elif '5 pire' in question_lower or 'bottom 5' in question_lower:
-                region_stats = region_stats.tail(5)
+            # Créer la visualisation
+            fig = plot_custom_visualization(df_viz, chart_type, x_col, y_col, color_col)
             
-            # Créer le graphique
-            if 'camembert' in question_lower or 'pie' in question_lower:
-                fig = px.pie(
-                    values=region_stats.values,
-                    names=region_stats.index,
-                    title="Régularité par Région"
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Bouton de téléchargement
+                st.download_button(
+                    label="💾 Télécharger le graphique (HTML)",
+                    data=fig.to_html(),
+                    file_name=f"chart_{chart_type.lower()}_{x_col}.html",
+                    mime="text/html"
                 )
             else:
-                fig = px.bar(
-                    x=region_stats.index,
-                    y=region_stats.values,
-                    title="Régularité Moyenne par Région",
-                    labels={'x': 'Région', 'y': 'Taux de Régularité (%)'},
-                    color=region_stats.values,
-                    color_continuous_scale='RdYlGn'
-                )
-                fig.update_layout(xaxis_tickangle=-45)
-            
-            return fig
-        
-        # ═══════════════════════════════════════════════════════════════
-        # GRAPHIQUE D'ÉVOLUTION TEMPORELLE
-        # ═══════════════════════════════════════════════════════════════
-        
-        elif any(word in question_lower for word in ['évolution', 'evolution', 'temps', 'tendance', 'courbe']):
-            if 'date' in df.columns:
-                # Évolution globale
-                time_stats = df.groupby('date')['taux_regularite'].mean().reset_index()
-                
-                fig = px.line(
-                    time_stats,
-                    x='date',
-                    y='taux_regularite',
-                    title="Évolution de la Régularité dans le Temps",
-                    labels={'date': 'Date', 'taux_regularite': 'Taux de Régularité (%)'}
-                )
-                fig.update_traces(line_color='#1f77b4', line_width=2)
-                
-                return fig
-        
-        # ═══════════════════════════════════════════════════════════════
-        # GRAPHIQUE DE DISTRIBUTION
-        # ═══════════════════════════════════════════════════════════════
-        
-        elif any(word in question_lower for word in ['distribution', 'histogramme', 'histogram', 'répartition']):
-            fig = px.histogram(
-                df,
-                x='taux_regularite',
-                nbins=30,
-                title="Distribution des Taux de Régularité",
-                labels={'taux_regularite': 'Taux de Régularité (%)', 'count': 'Nombre d\'enregistrements'}
-            )
-            
-            return fig
-        
-        # ═══════════════════════════════════════════════════════════════
-        # GRAPHIQUE MÉTÉO (si données enrichies)
-        # ═══════════════════════════════════════════════════════════════
-        
-        elif any(word in question_lower for word in ['météo', 'meteo', 'neige', 'pluie', 'vent', 'température']):
-            if 'weather_snowfall' in df.columns:
-                # Régularité selon les conditions de neige
-                df_snow = df.copy()
-                df_snow['snow_category'] = pd.cut(
-                    df_snow['weather_snowfall'],
-                    bins=[-0.1, 0, 5, 20, 1000],
-                    labels=['Pas de neige', 'Neige légère', 'Neige modérée', 'Forte neige']
-                )
-                
-                snow_stats = df_snow.groupby('snow_category')['taux_regularite'].mean()
-                
-                fig = px.bar(
-                    x=snow_stats.index,
-                    y=snow_stats.values,
-                    title="Impact de la Neige sur la Régularité",
-                    labels={'x': 'Condition de neige', 'y': 'Taux de Régularité (%)'},
-                    color=snow_stats.values,
-                    color_continuous_scale='Blues'
-                )
-                
-                return fig
-        
-        # ═══════════════════════════════════════════════════════════════
-        # GRAPHIQUE PAR DÉFAUT : TOP RÉGIONS
-        # ═══════════════════════════════════════════════════════════════
-        
+                st.warning("⚠️ Impossible de créer le graphique avec ces paramètres.")
         else:
-            # Graphique par défaut : top 10 régions
-            region_stats = df.groupby('region')['taux_regularite'].mean().sort_values(ascending=False).head(10)
-            
-            fig = px.bar(
-                x=region_stats.index,
-                y=region_stats.values,
-                title="Top 10 Régions - Régularité Moyenne",
-                labels={'x': 'Région', 'y': 'Taux de Régularité (%)'},
-                color=region_stats.values,
-                color_continuous_scale='RdYlGn'
-            )
-            fig.update_layout(xaxis_tickangle=-45)
-            
-            return fig
+            st.info("👈 Configurez votre graphique et cliquez sur 'Générer'")
+
 # ═══════════════════════════════════════════════════════════════════════
 # PAGE : 🔍 EXPLORATEUR DE DONNÉES
 # ═══════════════════════════════════════════════════════════════════════
@@ -877,457 +682,10 @@ elif page == "⚙️ Paramètres":
     © 2025 - Projet de stage
     """)
 
-
-
 # ═══════════════════════════════════════════════════════════════════════
-# PAGE : 🌦️ ANALYSE MÉTÉO
+# FOOTER
 # ═══════════════════════════════════════════════════════════════════════
 
-elif page == "🌦️ Analyse Météo":
-    st.title("🌦️ Analyse de l'Impact Météorologique")
-    
-    st.markdown("""
-    Cette section analyse la corrélation entre les conditions météorologiques et les retards/annulations de trains.
-    
-    **Sources de données météo disponibles :**
-    - 🌍 **Open-Meteo** : API gratuite, données historiques complètes
-    - 🌤️ **OpenWeatherMap** : Nécessite une clé API (optionnel, plus précis)
-    """)
-    
-    # Vérifier si le module météo existe
-    try:
-        from weather_analyzer import WeatherAnalyzer
-        module_meteo_disponible = True
-    except ImportError:
-        module_meteo_disponible = False
-        st.error("""
-        ❌ **Module météo non trouvé !**
-        
-        Le fichier `weather_analyzer.py` n'a pas été trouvé. 
-        
-        **Actions requises :**
-        1. Créez le fichier `weather_analyzer.py` dans le même dossier que `app.py`
-        2. Copiez-y le code du module météo fourni précédemment
-        3. Rechargez l'application
-        """)
-        st.stop()
-    
-    # Initialiser l'analyseur météo
-    if 'weather_analyzer' not in st.session_state:
-        try:
-            st.session_state.weather_analyzer = WeatherAnalyzer(df)
-            st.success("✅ Analyseur météo initialisé")
-        except Exception as e:
-            st.error(f"❌ Erreur lors de l'initialisation : {e}")
-            st.session_state.weather_analyzer = None
-    
-    weather_analyzer = st.session_state.weather_analyzer
-    
-    if weather_analyzer is None:
-        st.warning("⚠️ L'analyseur météo n'est pas disponible.")
-        st.stop()
-    
-    # ═══════════════════════════════════════════════════════════════════
-    # SECTION 1 : ENRICHISSEMENT DES DONNÉES
-    # ═══════════════════════════════════════════════════════════════════
-    
-    st.markdown("---")
-    st.subheader("📥 Étape 1 : Enrichissement avec Données Météo")
-    
-    with st.expander("⚙️ Configuration de l'enrichissement", expanded=True):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            sample_size = st.slider(
-                "Nombre d'enregistrements à enrichir",
-                min_value=100,
-                max_value=min(5000, len(df)),
-                value=min(500, len(df)),
-                step=100,
-                help="⚠️ Plus le nombre est élevé, plus l'enrichissement prendra du temps (appels API)"
-            )
-            
-            st.info(f"""
-            **Estimation :**
-            - Enregistrements : {sample_size}
-            - Temps estimé : ~{sample_size // 100} minutes
-            - Appels API : ~{sample_size // 10}
-            """)
-        
-        with col2:
-            use_openweather = st.checkbox(
-                "🌤️ Utiliser OpenWeatherMap (optionnel)",
-                help="Nécessite une clé API. Plus précis mais limité en appels gratuits.",
-                value=False
-            )
-            
-            openweather_key = None
-            if use_openweather:
-                openweather_key = st.text_input(
-                    "Clé API OpenWeatherMap",
-                    type="password",
-                    help="Obtenez une clé gratuite sur https://openweathermap.org/api"
-                )
-                
-                if not openweather_key:
-                    st.warning("⚠️ Entrez une clé API pour utiliser OpenWeatherMap")
-        
-        st.markdown("---")
-        
-        st.markdown("""
-        ### 💡 Comment ça marche ?
-        
-        1. **Récupération météo** : L'application récupère les données historiques pour chaque date
-        2. **Géolocalisation** : Les données sont associées aux régions via les grandes villes
-        3. **Score de sévérité** : Un score météo (0-100) est calculé automatiquement
-        4. **Analyse statistique** : Les corrélations avec les retards sont calculées
-        
-        ### 📊 Données météo collectées :
-        - 🌡️ Températures (min, max, moyenne)
-        - 🌧️ Précipitations et pluie
-        - ❄️ Chutes de neige
-        - 💨 Vitesse du vent et rafales
-        - 📈 Score de sévérité global
-        """)
-        
-        enrich_button = st.button(
-            "🚀 Lancer l'enrichissement météo",
-            type="primary",
-            use_container_width=True,
-            help="Lance la récupération des données météo (peut prendre plusieurs minutes)"
-        )
-    
-    if enrich_button:
-        if 'date' not in df.columns:
-            st.error("❌ La colonne 'date' est nécessaire pour l'enrichissement météo.")
-        else:
-            progress_container = st.container()
-            
-            with progress_container:
-                st.info("🌦️ **Enrichissement en cours...** Cela peut prendre plusieurs minutes selon le nombre d'enregistrements.")
-                
-                try:
-                    df_enriched = weather_analyzer.enrich_with_weather(
-                        sample_size=sample_size,
-                        use_api_key=openweather_key if use_openweather else None
-                    )
-                    
-                    if df_enriched is not None and len(df_enriched) > 0:
-                        st.session_state.df_enriched = df_enriched
-                        st.session_state.weather_analyzer.df_enriched = df_enriched
-                        
-                        st.success("✅ **Enrichissement terminé avec succès !**")
-                        st.balloons()
-                        
-                        # Afficher un aperçu
-                        st.markdown("### 📋 Aperçu des premières lignes enrichies")
-                        weather_cols = [col for col in df_enriched.columns if col in [
-                            'date', 'region', 'temperature_mean', 'precipitation', 
-                            'snow', 'wind_speed', 'weather_severity_score'
-                        ]]
-                        st.dataframe(df_enriched[weather_cols].head(10), use_container_width=True)
-                    else:
-                        st.error("❌ L'enrichissement a échoué ou n'a retourné aucune donnée.")
-                        
-                except Exception as e:
-                    st.error(f"❌ **Erreur lors de l'enrichissement :** {e}")
-                    st.exception(e)
-    
-    # ═══════════════════════════════════════════════════════════════════
-    # SECTION 2 : VISUALISATION DES DONNÉES MÉTÉO
-    # ═══════════════════════════════════════════════════════════════════
-    
-    if 'df_enriched' in st.session_state and st.session_state.df_enriched is not None:
-        df_enriched = st.session_state.df_enriched
-        
-        st.markdown("---")
-        st.subheader("📊 Étape 2 : Aperçu des Données Météo")
-        
-        # KPIs météo
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            if 'temperature_mean' in df_enriched.columns:
-                avg_temp = df_enriched['temperature_mean'].dropna().mean()
-                st.metric(
-                    "🌡️ Température Moyenne",
-                    f"{avg_temp:.1f}°C"
-                )
-        
-        with col2:
-            if 'precipitation' in df_enriched.columns:
-                total_precip = df_enriched['precipitation'].dropna().sum()
-                st.metric(
-                    "🌧️ Précipitations Totales",
-                    f"{total_precip:.0f} mm"
-                )
-        
-        with col3:
-            if 'snow' in df_enriched.columns:
-                jours_neige = (df_enriched['snow'] > 0).sum()
-                st.metric(
-                    "❄️ Jours avec Neige",
-                    f"{jours_neige}"
-                )
-        
-        with col4:
-            if 'wind_gusts' in df_enriched.columns:
-                max_wind = df_enriched['wind_gusts'].dropna().max()
-                st.metric(
-                    "💨 Rafale Maximale",
-                    f"{max_wind:.0f} km/h" if not pd.isna(max_wind) else "N/A"
-                )
-        
-        # Tableau détaillé
-        st.markdown("### 📋 Tableau des Données Enrichies")
-        
-        weather_cols = [col for col in df_enriched.columns if col in [
-            'date', 'region', 'city', 'taux_regularite',
-            'temperature_mean', 'precipitation', 'rain', 'snow', 
-            'wind_speed', 'wind_gusts', 'weather_severity_score'
-        ]]
-        
-        if weather_cols:
-            st.dataframe(
-                df_enriched[weather_cols].head(50),
-                use_container_width=True,
-                height=400
-            )
-        
-        # ═══════════════════════════════════════════════════════════════
-        # SECTION 3 : ANALYSE DE CORRÉLATION
-        # ═══════════════════════════════════════════════════════════════
-        
-        st.markdown("---")
-        st.subheader("🔬 Étape 3 : Analyse des Corrélations Météo-Retards")
-        
-        st.markdown("""
-        Cette analyse utilise des tests statistiques pour déterminer si les conditions météorologiques 
-        ont un impact significatif sur la ponctualité des trains.
-        """)
-        
-        analyze_button = st.button(
-            "📊 Lancer l'Analyse Statistique",
-            type="primary",
-            use_container_width=True
-        )
-        
-        if analyze_button:
-            with st.spinner("🔬 Analyse statistique en cours..."):
-                try:
-                    results = weather_analyzer.analyze_weather_impact()
-                    
-                    if 'error' in results:
-                        st.error(f"❌ {results['error']}")
-                    else:
-                        st.session_state.weather_results = results
-                        st.success("✅ Analyse terminée !")
-                except Exception as e:
-                    st.error(f"❌ Erreur lors de l'analyse : {e}")
-                    st.exception(e)
-        
-        # Affichage des résultats d'analyse
-        if 'weather_results' in st.session_state:
-            results = st.session_state.weather_results
-            
-            st.markdown("---")
-            st.markdown("## 📈 Résultats de l'Analyse")
-            
-            # Corrélation principale
-            if 'correlation_regularite_meteo' in results:
-                corr_data = results['correlation_regularite_meteo']
-                
-                st.markdown("### 📊 Corrélation Globale Météo-Régularité")
-                
-                col1, col2 = st.columns([2, 1])
-                
-                with col1:
-                    corr_value = corr_data['correlation']
-                    
-                    # Couleur selon la force
-                    if abs(corr_value) < 0.3:
-                        color = "#2196F3"  # Bleu
-                        niveau = "Faible"
-                    elif abs(corr_value) < 0.6:
-                        color = "#FF9800"  # Orange
-                        niveau = "Modérée"
-                    else:
-                        color = "#F44336"  # Rouge
-                        niveau = "Forte"
-                    
-                    st.markdown(f"""
-                    <div style='padding: 2rem; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); 
-                                border-radius: 15px; border-left: 8px solid {color}; box-shadow: 0 4px 6px rgba(0,0,0,0.1);'>
-                        <h2 style='margin: 0; color: {color}; font-size: 2.5rem;'>r = {corr_value:.3f}</h2>
-                        <p style='margin: 1rem 0 0 0; font-size: 1.3rem; font-weight: bold;'>{corr_data['interpretation']}</p>
-                        <p style='margin: 0.5rem 0 0 0; color: #555; font-size: 1.1rem;'>
-                            Significativité : <strong>{corr_data['significance']}</strong> (p = {corr_data['p_value']:.4f})
-                        </p>
-                        <p style='margin: 0.5rem 0 0 0; color: #666;'>
-                            Niveau de corrélation : <strong>{niveau}</strong>
-                        </p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                with col2:
-                    st.info("""
-                    **📚 Interprétation du coefficient :**
-                    
-                    - **|r| < 0.3** : Corrélation faible
-                    - **0.3 ≤ |r| < 0.6** : Corrélation modérée
-                    - **|r| ≥ 0.6** : Corrélation forte
-                    
-                    Une corrélation **négative** signifie que la régularité diminue quand la sévérité météo augmente.
-                    
-                    **p-value < 0.05** = statistiquement significatif
-                    """)
-            
-            # Impact de la neige
-            if 'impact_neige' in results:
-                st.markdown("---")
-                st.markdown("### ❄️ Impact de la Neige sur la Régularité")
-                
-                impact = results['impact_neige']
-                
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    st.metric(
-                        "Sans Neige",
-                        f"{impact['regularite_sans_neige']:.2f}%",
-                        help="Taux de régularité moyen les jours sans neige"
-                    )
-                
-                with col2:
-                    st.metric(
-                        "Avec Neige ❄️",
-                        f"{impact['regularite_avec_neige']:.2f}%",
-                        delta=f"-{impact['difference']:.2f}%",
-                        delta_color="inverse",
-                        help="Taux de régularité moyen les jours avec neige"
-                    )
-                
-                with col3:
-                    st.metric(
-                        "Perte de Régularité",
-                        f"{impact['difference']:.2f} points",
-                        help="Différence de régularité due à la neige"
-                    )
-                
-                # Interprétation
-                if impact['difference'] > 5:
-                    st.error(f"⚠️ **Impact significatif** : La neige réduit la régularité de **{impact['difference']:.1f} points** de pourcentage.")
-                elif impact['difference'] > 2:
-                    st.warning(f"📊 **Impact modéré** : La neige affecte la régularité de **{impact['difference']:.1f} points**.")
-                else:
-                    st.success(f"✅ **Impact faible** : La neige a un effet limité (**{impact['difference']:.1f} points**).")
-            
-            # Impact du vent
-            if 'impact_vent' in results:
-                st.markdown("---")
-                st.markdown("### 💨 Impact du Vent Fort (> 90 km/h)")
-                
-                impact = results['impact_vent']
-                
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    st.metric("Vent Normal", f"{impact['regularite_vent_normal']:.2f}%")
-                
-                with col2:
-                    st.metric(
-                        "Vent Fort 💨",
-                        f"{impact['regularite_vent_fort']:.2f}%",
-                        delta=f"-{impact['difference']:.2f}%",
-                        delta_color="inverse"
-                    )
-                
-                with col3:
-                    st.metric("Perte", f"{impact['difference']:.2f} points")
-            
-            # Impact de la pluie
-            if 'impact_pluie' in results:
-                st.markdown("---")
-                st.markdown("### 🌧️ Impact de la Pluie Forte (> 10 mm)")
-                
-                impact = results['impact_pluie']
-                
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    st.metric("Pluie Faible", f"{impact['regularite_pluie_faible']:.2f}%")
-                
-                with col2:
-                    st.metric(
-                        "Pluie Forte 🌧️",
-                        f"{impact['regularite_pluie_forte']:.2f}%",
-                        delta=f"-{impact['difference']:.2f}%",
-                        delta_color="inverse"
-                    )
-                
-                with col3:
-                    st.metric("Perte", f"{impact['difference']:.2f} points")
-        
-        # ═══════════════════════════════════════════════════════════════
-        # SECTION 4 : VISUALISATIONS
-        # ═══════════════════════════════════════════════════════════════
-        
-        st.markdown("---")
-        st.subheader("📈 Étape 4 : Visualisations Avancées")
-        
-        if st.button("🎨 Générer les Graphiques", type="primary", use_container_width=True):
-            try:
-                weather_analyzer.plot_weather_impact()
-            except Exception as e:
-                st.error(f"❌ Erreur lors de la génération des visualisations : {e}")
-                st.exception(e)
-        
-        # ═══════════════════════════════════════════════════════════════
-        # SECTION 5 : EXPORT
-        # ═══════════════════════════════════════════════════════════════
-        
-        st.markdown("---")
-        st.subheader("💾 Étape 5 : Export des Données")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            csv = df_enriched.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Télécharger CSV (avec météo)",
-                data=csv,
-                file_name=f"ter_meteo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-        
-        with col2:
-            from io import BytesIO
-            buffer = BytesIO()
-            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                df_enriched.to_excel(writer, index=False, sheet_name='Donnees_Meteo')
-            buffer.seek(0)
-            
-            st.download_button(
-                label="📥 Télécharger Excel (avec météo)",
-                data=buffer,
-                file_name=f"ter_meteo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
-    
-    else:
-        st.info("👆 **Commencez par enrichir le dataset** avec les données météo pour accéder aux analyses et visualisations.")
-        
-        st.markdown("""
-        ### 🎯 Prochaines étapes :
-        
-        1. **Configurez** le nombre d'enregistrements à analyser
-        2. **Lancez** l'enrichissement météo (bouton ci-dessus)
-        3. **Attendez** quelques minutes pendant la récupération des données
-        4. **Analysez** les corrélations et visualisations
-        5. **Exportez** les résultats enrichis
-        """)
 st.markdown("---")
 st.markdown(
     """
@@ -1337,7 +695,3 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-# ═══════════════════════════════════════════════════════════════════════
-# FOOTER
-# ═══════════════════════════════════════════════════════════════════════
-
