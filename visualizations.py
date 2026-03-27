@@ -1,18 +1,206 @@
-streamlit>=1.32.0
-pandas>=2.0.0
-matplotlib>=3.7.0
-seaborn>=0.12.0
-plotly>=5.18.0
-azure-storage-blob>=12.19.0
-openpyxl>=3.1.0
 
-# LangChain + LangGraph (nouvelle architecture)
-langchain>=0.1.0
-langchain-core>=0.1.0
-langchain-mistralai>=0.0.5
-langgraph>=0.0.40
+# -*- coding: utf-8 -*-
+"""
+Module de génération de visualisations pour l'analyse TER
+"""
 
-# Utilitaires
-python-dotenv
-numpy
-scipy
+import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import plotly.express as px
+import plotly.graph_objects as go
+from config import Config
+
+# Style matplotlib
+sns.set_style("whitegrid")
+plt.rcParams['figure.facecolor'] = 'white'
+
+def plot_kpi_cards(df):
+    """Affiche des cartes KPI en haut du dashboard"""
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    # KPI 1 : Taux de régularité moyen
+    if 'taux_regularite' in df.columns:
+        avg_regularite = df['taux_regularite'].mean()
+        delta_regularite = avg_regularite - 90  # Comparaison à un objectif de 90%
+        
+        with col1:
+            st.metric(
+                label="📊 Régularité Moyenne",
+                value=f"{avg_regularite:.1f}%",
+                delta=f"{delta_regularite:+.1f}% vs objectif",
+                delta_color="normal" if avg_regularite >= 90 else "inverse"
+            )
+    
+    # KPI 2 : Total trains
+    if 'nombre_trains_prevus' in df.columns:
+        total_trains = df['nombre_trains_prevus'].sum()
+        with col2:
+            st.metric(
+                label="🚂 Trains Prévus",
+                value=f"{total_trains:,.0f}"
+            )
+    
+    # KPI 3 : Trains supprimés
+    if 'nombre_trains_supprimes' in df.columns:
+        total_supprimes = df['nombre_trains_supprimes'].sum()
+        taux_suppression = (total_supprimes / total_trains * 100) if total_trains > 0 else 0
+        
+        with col3:
+            st.metric(
+                label="❌ Trains Supprimés",
+                value=f"{total_supprimes:,.0f}",
+                delta=f"{taux_suppression:.2f}%"
+            )
+    
+    # KPI 4 : Nombre de régions
+    if 'region' in df.columns:
+        nb_regions = df['region'].nunique()
+        with col4:
+            st.metric(
+                label="🗺️ Régions Analysées",
+                value=f"{nb_regions}"
+            )
+
+def plot_regularite_evolution(df):
+    """Graphique d'évolution de la régularité dans le temps"""
+    
+    if 'date' in df.columns and 'taux_regularite' in df.columns:
+        st.subheader("📈 Évolution de la Régularité")
+        
+        # Agrégation mensuelle
+        df_monthly = df.groupby(pd.Grouper(key='date', freq='M'))['taux_regularite'].mean().reset_index()
+        
+        # Graphique Plotly interactif
+        fig = px.line(
+            df_monthly,
+            x='date',
+            y='taux_regularite',
+            title="Taux de Régularité Mensuel",
+            labels={'date': 'Date', 'taux_regularite': 'Taux de Régularité (%)'},
+            markers=True
+        )
+        
+        # Ligne d'objectif
+        fig.add_hline(
+            y=90,
+            line_dash="dash",
+            line_color="red",
+            annotation_text="Objectif 90%"
+        )
+        
+        fig.update_layout(height=400, hovermode='x unified')
+        st.plotly_chart(fig, use_container_width=True)
+
+def plot_regularite_by_region(df):
+    """Graphique de régularité par région"""
+    
+    if 'region' in df.columns and 'taux_regularite' in df.columns:
+        st.subheader("🗺️ Régularité par Région")
+        
+        # Calcul de la moyenne par région
+        df_region = df.groupby('region')['taux_regularite'].mean().sort_values(ascending=True)
+        
+        # Graphique horizontal
+        fig = px.bar(
+            x=df_region.values,
+            y=df_region.index,
+            orientation='h',
+            title="Taux de Régularité Moyen par Région",
+            labels={'x': 'Taux de Régularité (%)', 'y': 'Région'},
+            color=df_region.values,
+            color_continuous_scale='RdYlGn'
+        )
+        
+        fig.update_layout(height=500, showlegend=False)
+        st.plotly_chart(fig, use_container_width=True)
+
+def plot_causes_retards(df):
+    """Distribution des causes de retards (si disponible)"""
+    
+    # Cette fonction sera adaptée selon tes vraies colonnes
+    st.subheader("🔍 Analyse des Perturbations")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if 'nombre_trains_retard' in df.columns and 'nombre_trains_supprimes' in df.columns:
+            # Pie chart des perturbations
+            total_retards = df['nombre_trains_retard'].sum()
+            total_supprimes = df['nombre_trains_supprimes'].sum()
+            
+            fig = go.Figure(data=[go.Pie(
+                labels=['Trains en Retard', 'Trains Supprimés'],
+                values=[total_retards, total_supprimes],
+                hole=.3
+            )])
+            
+            fig.update_layout(title="Répartition des Perturbations")
+            st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        if 'mois' in df.columns and 'nombre_trains_retard' in df.columns:
+            # Évolution mensuelle des retards
+            df_monthly_retards = df.groupby('mois')['nombre_trains_retard'].sum().sort_index()
+            
+            fig = px.bar(
+                x=df_monthly_retards.index,
+                y=df_monthly_retards.values,
+                title="Nombre de Trains en Retard par Mois",
+                labels={'x': 'Mois', 'y': 'Nombre de Trains'}
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+
+def plot_heatmap_regularite(df):
+    """Heatmap régularité par région et mois"""
+    
+    if all(col in df.columns for col in ['region', 'mois', 'taux_regularite']):
+        st.subheader("🔥 Heatmap : Régularité par Région et Mois")
+        
+        # Pivot table
+        pivot = df.pivot_table(
+            values='taux_regularite',
+            index='region',
+            columns='mois',
+            aggfunc='mean'
+        )
+        
+        # Heatmap avec Plotly
+        fig = px.imshow(
+            pivot,
+            labels=dict(x="Mois", y="Région", color="Régularité (%)"),
+            x=pivot.columns,
+            y=pivot.index,
+            color_continuous_scale='RdYlGn',
+            aspect="auto"
+        )
+        
+        fig.update_layout(height=600)
+        st.plotly_chart(fig, use_container_width=True)
+
+def plot_custom_visualization(df, chart_type, x_col, y_col, color_col=None):
+    """Générateur de visualisation personnalisée"""
+    
+    try:
+        if chart_type == "Ligne":
+            fig = px.line(df, x=x_col, y=y_col, color=color_col, markers=True)
+        elif chart_type == "Barre":
+            fig = px.bar(df, x=x_col, y=y_col, color=color_col)
+        elif chart_type == "Scatter":
+            fig = px.scatter(df, x=x_col, y=y_col, color=color_col)
+        elif chart_type == "Histogramme":
+            fig = px.histogram(df, x=x_col, color=color_col)
+        elif chart_type == "Box Plot":
+            fig = px.box(df, x=x_col, y=y_col, color=color_col)
+        else:
+            return None
+        
+        fig.update_layout(height=500)
+        return fig
+        
+    except Exception as e:
+        st.error(f"❌ Erreur lors de la création du graphique : {e}")
+        return None
