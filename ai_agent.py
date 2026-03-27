@@ -1,20 +1,17 @@
 # ai_agent.py
-
-}"
-# ai_agent.py
 # -*- coding: utf-8 -*-
 """
-Agent IA pour l'analyse des données TER avec génération de graphiques
+Agent IA conversationnel pour l'analyse des données TER
 """
 
 from mistralai import Mistral
 import pandas as pd
-import json
+from typing import Tuple, Optional
 from config import Config
 
 
 class TERAnalysisAgent:
-    """Agent IA pour analyser les données TER et générer des graphiques"""
+    """Agent IA pour analyser les données TER"""
     
     def __init__(self, df: pd.DataFrame):
         """
@@ -23,273 +20,118 @@ class TERAnalysisAgent:
         Args:
             df: DataFrame contenant les données TER
         """
-        if not Config.MISTRAL_API_KEY:
-            raise ValueError("❌ MISTRAL_API_KEY n'est pas configurée")
-        
+        self.df = df
         self.client = Mistral(api_key=Config.MISTRAL_API_KEY)
         self.model = Config.MISTRAL_MODEL
-        self.df = df
+        self.conversation_history = []
         
-        # Préparer un résumé des données pour le contexte
+        # Préparer le contexte des données
         self.data_context = self._prepare_data_context()
         
         print("✅ Agent IA initialisé avec succès")
-        print(f"   Modèle : {self.model}")
-        print(f"   Données : {len(df)} lignes, {len(df.columns)} colonnes")
     
     def _prepare_data_context(self) -> str:
-        """Prépare un résumé des données pour le contexte de l'IA"""
+        """Prépare un résumé du contexte des données"""
         
         context_parts = [
-            f"Dataset TER : {len(self.df)} enregistrements",
-            f"Colonnes disponibles : {', '.join(self.df.columns.tolist())}",
+            f"📊 Dataset TER : {len(self.df):,} enregistrements",
+            f"📋 Colonnes : {', '.join(self.df.columns.tolist())}"
         ]
         
-        # Ajouter des statistiques de base
+        # Ajouter des statistiques
         if 'taux_regularite' in self.df.columns:
             avg_reg = self.df['taux_regularite'].mean()
-            context_parts.append(f"Taux de régularité moyen : {avg_reg:.2f}%")
+            context_parts.append(f"📈 Régularité moyenne : {avg_reg:.2f}%")
         
         if 'region' in self.df.columns:
-            regions = self.df['region'].unique()
-            context_parts.append(f"Régions : {', '.join(regions[:10])}" + 
-                               (" ..." if len(regions) > 10 else ""))
-        
-        if 'date' in self.df.columns:
-            date_min = self.df['date'].min()
-            date_max = self.df['date'].max()
-            context_parts.append(f"Période : du {date_min} au {date_max}")
+            nb_regions = self.df['region'].nunique()
+            context_parts.append(f"🗺️ Nombre de régions : {nb_regions}")
         
         return "\n".join(context_parts)
     
-    def _analyze_data(self, question: str) -> dict:
-        """
-        Analyse les données selon la question
+    def _create_system_prompt(self) -> str:
+        """Crée le prompt système pour l'agent"""
         
-        Returns:
-            dict avec 'data' (résultats) et 'summary' (texte)
-        """
-        
-        # Créer différents types d'analyses selon la question
-        question_lower = question.lower()
-        
-        result = {
-            'data': None,
-            'summary': '',
-            'chart_type': None,
-            'chart_data': None
-        }
-        
-        try:
-            # Régularité moyenne globale
-            if any(word in question_lower for word in ['moyenne', 'globale', 'général']):
-                if 'taux_regularite' in self.df.columns:
-                    avg = self.df['taux_regularite'].mean()
-                    result['summary'] = f"La régularité moyenne est de {avg:.2f}%"
-                    result['data'] = {'moyenne': avg}
-            
-            # Régularité par région
-            elif any(word in question_lower for word in ['région', 'regions', 'compare']):
-                if 'region' in self.df.columns and 'taux_regularite' in self.df.columns:
-                    by_region = self.df.groupby('region')['taux_regularite'].mean().sort_values(ascending=False)
-                    
-                    result['chart_type'] = 'bar'
-                    result['chart_data'] = {
-                        'x': by_region.index.tolist(),
-                        'y': by_region.values.tolist(),
-                        'title': 'Régularité moyenne par région',
-                        'xlabel': 'Région',
-                        'ylabel': 'Taux de régularité (%)'
-                    }
-                    
-                    top3 = by_region.head(3)
-                    result['summary'] = "Top 3 des régions :\n" + "\n".join(
-                        [f"{i+1}. {region}: {taux:.2f}%" 
-                         for i, (region, taux) in enumerate(top3.items())]
-                    )
-                    result['data'] = by_region.to_dict()
-            
-            # Top / meilleures régions
-            elif any(word in question_lower for word in ['meilleur', 'top', 'première']):
-                if 'region' in self.df.columns and 'taux_regularite' in self.df.columns:
-                    n = 5  # Par défaut
-                    if 'top 10' in question_lower or '10' in question_lower:
-                        n = 10
-                    elif 'top 3' in question_lower or '3' in question_lower:
-                        n = 3
-                    
-                    top_regions = self.df.groupby('region')['taux_regularite'].mean().nlargest(n)
-                    
-                    result['chart_type'] = 'bar'
-                    result['chart_data'] = {
-                        'x': top_regions.index.tolist(),
-                        'y': top_regions.values.tolist(),
-                        'title': f'Top {n} des régions les plus ponctuelles',
-                        'xlabel': 'Région',
-                        'ylabel': 'Taux de régularité (%)',
-                        'color': 'green'
-                    }
-                    
-                    result['summary'] = f"Top {n} des régions les plus ponctuelles :\n" + "\n".join(
-                        [f"{i+1}. {region}: {taux:.2f}%" 
-                         for i, (region, taux) in enumerate(top_regions.items())]
-                    )
-                    result['data'] = top_regions.to_dict()
-            
-            # Pires régions
-            elif any(word in question_lower for word in ['pire', 'mauvais', 'dernière', 'worst']):
-                if 'region' in self.df.columns and 'taux_regularite' in self.df.columns:
-                    n = 5
-                    if '10' in question_lower:
-                        n = 10
-                    elif '3' in question_lower:
-                        n = 3
-                    
-                    worst_regions = self.df.groupby('region')['taux_regularite'].mean().nsmallest(n)
-                    
-                    result['chart_type'] = 'bar'
-                    result['chart_data'] = {
-                        'x': worst_regions.index.tolist(),
-                        'y': worst_regions.values.tolist(),
-                        'title': f'Top {n} des régions les moins ponctuelles',
-                        'xlabel': 'Région',
-                        'ylabel': 'Taux de régularité (%)',
-                        'color': 'red'
-                    }
-                    
-                    result['summary'] = f"Top {n} des régions les moins ponctuelles :\n" + "\n".join(
-                        [f"{i+1}. {region}: {taux:.2f}%" 
-                         for i, (region, taux) in enumerate(worst_regions.items())]
-                    )
-                    result['data'] = worst_regions.to_dict()
-            
-            # Évolution temporelle
-            elif any(word in question_lower for word in ['évolution', 'evolution', 'temps', 'tendance']):
-                if 'date' in self.df.columns and 'taux_regularite' in self.df.columns:
-                    by_date = self.df.groupby('date')['taux_regularite'].mean().sort_index()
-                    
-                    result['chart_type'] = 'line'
-                    result['chart_data'] = {
-                        'x': [str(d) for d in by_date.index.tolist()],
-                        'y': by_date.values.tolist(),
-                        'title': 'Évolution de la régularité dans le temps',
-                        'xlabel': 'Date',
-                        'ylabel': 'Taux de régularité (%)'
-                    }
-                    
-                    trend = "hausse" if by_date.iloc[-1] > by_date.iloc[0] else "baisse"
-                    result['summary'] = f"Évolution : tendance à la {trend}\n"
-                    result['summary'] += f"Début : {by_date.iloc[0]:.2f}%\n"
-                    result['summary'] += f"Fin : {by_date.iloc[-1]:.2f}%"
-                    result['data'] = by_date.to_dict()
-            
-            # Impact météo (si colonnes disponibles)
-            elif any(word in question_lower for word in ['météo', 'meteo', 'neige', 'pluie', 'vent']):
-                weather_cols = [col for col in self.df.columns if any(
-                    w in col.lower() for w in ['neige', 'pluie', 'vent', 'temp']
-                )]
-                
-                if weather_cols and 'taux_regularite' in self.df.columns:
-                    # Analyser l'impact de la première colonne météo trouvée
-                    weather_col = weather_cols[0]
-                    
-                    # Créer des catégories
-                    if 'neige' in weather_col.lower() or 'pluie' in weather_col.lower():
-                        self.df['meteo_category'] = pd.cut(
-                            self.df[weather_col], 
-                            bins=[0, 0.1, 5, 100], 
-                            labels=['Pas de précipitations', 'Légères', 'Fortes']
-                        )
-                    else:
-                        self.df['meteo_category'] = pd.cut(
-                            self.df[weather_col], 
-                            bins=3, 
-                            labels=['Faible', 'Moyen', 'Fort']
-                        )
-                    
-                    by_weather = self.df.groupby('meteo_category')['taux_regularite'].mean()
-                    
-                    result['chart_type'] = 'bar'
-                    result['chart_data'] = {
-                        'x': [str(x) for x in by_weather.index.tolist()],
-                        'y': by_weather.values.tolist(),
-                        'title': f'Impact de {weather_col} sur la régularité',
-                        'xlabel': weather_col,
-                        'ylabel': 'Taux de régularité (%)'
-                    }
-                    
-                    result['summary'] = f"Impact de {weather_col} :\n" + "\n".join(
-                        [f"- {cat}: {taux:.2f}%" 
-                         for cat, taux in by_weather.items()]
-                    )
-                    result['data'] = by_weather.to_dict()
-        
-        except Exception as e:
-            print(f"⚠️ Erreur lors de l'analyse : {e}")
-            result['summary'] = "Je n'ai pas pu analyser cette dimension des données."
-        
-        return result
+        return f"""Tu es un assistant IA expert en analyse de données ferroviaires TER en France.
+
+**Contexte des données disponibles :**
+{self.data_context}
+
+**Tes capacités :**
+- Analyser les données et répondre à des questions
+- Calculer des statistiques
+- Faire des comparaisons entre régions
+- Analyser les tendances temporelles
+
+**Instructions :**
+- Réponds en français de manière claire et concise
+- Utilise des émojis pour rendre la réponse agréable
+- Fournis des chiffres précis quand c'est possible
+- Si tu ne peux pas répondre, dis-le clairement
+
+**Colonnes disponibles :**
+{', '.join(self.df.columns.tolist())}
+
+Réponds de façon professionnelle et précise !"""
     
-    def ask(self, question: str) -> dict:
+    def ask(self, question: str) -> str:
         """
         Pose une question à l'agent
         
         Args:
-            question: Question en langage naturel
+            question: Question de l'utilisateur
             
         Returns:
-            dict avec 'text' (réponse), 'chart_type', 'chart_data'
+            Réponse de l'agent
         """
+        print(f"\n🤔 Question reçue : {question}")
         
-        print(f"\n🤔 Question : {question}")
+        # Ajouter la question à l'historique
+        self.conversation_history.append({
+            "role": "user",
+            "content": question
+        })
         
-        # Analyser les données
-        analysis = self._analyze_data(question)
-        
-        # Construire le prompt pour l'IA
-        system_prompt = f"""Tu es un assistant spécialisé dans l'analyse des données de régularité des trains TER en France.
-
-CONTEXTE DES DONNÉES :
-{self.data_context}
-
-ANALYSE EFFECTUÉE :
-{analysis['summary'] if analysis['summary'] else 'Aucune analyse spécifique'}
-
-Réponds à la question de l'utilisateur de manière claire et concise en français.
-Si des données chiffrées sont disponibles, cite-les.
-Sois précis et factuel."""
+        # Créer les messages pour l'API
+        messages = [
+            {
+                "role": "system",
+                "content": self._create_system_prompt()
+            }
+        ] + self.conversation_history
         
         try:
             # Appeler l'API Mistral
             response = self.client.chat.complete(
                 model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": question}
-                ],
+                messages=messages,
                 temperature=0.3,
-                max_tokens=500
+                max_tokens=1000
             )
             
-            answer_text = response.choices[0].message.content
+            # Extraire la réponse
+            assistant_response = response.choices[0].message.content
+            
+            # Ajouter la réponse à l'historique
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": assistant_response
+            })
             
             print(f"✅ Réponse générée")
             
-            return {
-                'text': answer_text,
-                'chart_type': analysis.get('chart_type'),
-                'chart_data': analysis.get('chart_data')
-            }
+            return assistant_response
         
         except Exception as e:
-            print(f"❌ Erreur API Mistral : {e}")
-            
-            # Réponse de secours avec les données analysées
-            if analysis['summary']:
-                return {
-                    'text': analysis['summary'],
-                    'chart_type': analysis.get('chart_type'),
-                    'chart_data': analysis.get('chart_data')
-                }
-            else:
-                raise e
+            error_msg = f"❌ Erreur lors de l'appel à l'API : {str(e)}"
+            print(error_msg)
+            return error_msg
+    
+    def reset_conversation(self):
+        """Réinitialise l'historique de conversation"""
+        self.conversation_history = []
+        print("🔄 Historique de conversation réinitialisé")
+    
+    def get_conversation_length(self) -> int:
+        """Retourne le nombre de messages dans l'historique"""
+        return len(self.conversation_history)
