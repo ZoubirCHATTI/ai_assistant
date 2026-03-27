@@ -668,7 +668,7 @@ def generate_chart_from_question(question: str, df: pd.DataFrame):
 # PAGE : 🔍 EXPLORATEUR DE DONNÉES
 # ═══════════════════════════════════════════════════════════════════════
 
-elif page == "🔍 Explorateur de Données":
+elif page == "Explorateur de Données":
     st.title("🔍 Explorateur de Données")
     
     # Filtres avancés
