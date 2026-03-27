@@ -311,7 +311,6 @@ elif page == "📊 Dashboard":
 # ═══════════════════════════════════════════════════════════════════════
 # PAGE : 💬 CHAT IA
 # ═══════════════════════════════════════════════════════════════════════
-
 elif page == "💬 Chat IA":
     st.title("💬 Chat avec l'Assistant IA")
     
@@ -527,227 +526,144 @@ elif page == "💬 Chat IA":
             st.info("ℹ️ Utilisez 'Analyse Météo' pour enrichir les données")
 
 
-    # ═══════════════════════════════════════════════════════════════════════
-    # FONCTION DE GÉNÉRATION DE GRAPHIQUES
-    # ═══════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
+# FONCTION DE GÉNÉRATION DE GRAPHIQUES
+# ═══════════════════════════════════════════════════════════════════════
+
+def generate_chart_from_question(question: str, df: pd.DataFrame):
+    """
+    Génère un graphique en fonction de la question posée
     
-    def generate_chart_from_question(question: str, df: pd.DataFrame):
-        """
-        Génère un graphique en fonction de la question posée
+    Args:
+        question: Question de l'utilisateur
+        df: DataFrame avec les données
         
-        Args:
-            question: Question de l'utilisateur
-            df: DataFrame avec les données
-            
-        Returns:
-            Figure Plotly ou None
-        """
-        question_lower = question.lower()
+    Returns:
+        Figure Plotly ou None
+    """
+    question_lower = question.lower()
+    
+    # Vérifier les colonnes nécessaires
+    if 'region' not in df.columns or 'taux_regularite' not in df.columns:
+        return None
+    
+    # ═══════════════════════════════════════════════════════════════
+    # GRAPHIQUE PAR RÉGION
+    # ═══════════════════════════════════════════════════════════════
+    
+    if any(word in question_lower for word in ['région', 'region', 'compare', 'meilleur', 'pire']):
+        # Calculer la moyenne par région
+        region_stats = df.groupby('region')['taux_regularite'].mean().sort_values(ascending=False)
         
-        # Vérifier les colonnes nécessaires
-        if 'region' not in df.columns or 'taux_regularite' not in df.columns:
-            return None
+        # Limiter aux top N si demandé
+        if 'top 5' in question_lower or '5 meilleur' in question_lower:
+            region_stats = region_stats.head(5)
+        elif 'top 10' in question_lower or '10 meilleur' in question_lower:
+            region_stats = region_stats.head(10)
+        elif '5 pire' in question_lower or 'bottom 5' in question_lower:
+            region_stats = region_stats.tail(5)
         
-        # ═══════════════════════════════════════════════════════════════
-        # GRAPHIQUE PAR RÉGION
-        # ═══════════════════════════════════════════════════════════════
-        
-        if any(word in question_lower for word in ['région', 'region', 'compare', 'meilleur', 'pire']):
-            # Calculer la moyenne par région
-            region_stats = df.groupby('region')['taux_regularite'].mean().sort_values(ascending=False)
-            
-            # Limiter aux top N si demandé
-            if 'top 5' in question_lower or '5 meilleur' in question_lower:
-                region_stats = region_stats.head(5)
-            elif 'top 10' in question_lower or '10 meilleur' in question_lower:
-                region_stats = region_stats.head(10)
-            elif '5 pire' in question_lower or 'bottom 5' in question_lower:
-                region_stats = region_stats.tail(5)
-            
-            # Créer le graphique
-            if 'camembert' in question_lower or 'pie' in question_lower:
-                fig = px.pie(
-                    values=region_stats.values,
-                    names=region_stats.index,
-                    title="Régularité par Région"
-                )
-            else:
-                fig = px.bar(
-                    x=region_stats.index,
-                    y=region_stats.values,
-                    title="Régularité Moyenne par Région",
-                    labels={'x': 'Région', 'y': 'Taux de Régularité (%)'},
-                    color=region_stats.values,
-                    color_continuous_scale='RdYlGn'
-                )
-                fig.update_layout(xaxis_tickangle=-45)
-            
-            return fig
-        
-        # ═══════════════════════════════════════════════════════════════
-        # GRAPHIQUE D'ÉVOLUTION TEMPORELLE
-        # ═══════════════════════════════════════════════════════════════
-        
-        elif any(word in question_lower for word in ['évolution', 'evolution', 'temps', 'tendance', 'courbe']):
-            if 'date' in df.columns:
-                # Évolution globale
-                time_stats = df.groupby('date')['taux_regularite'].mean().reset_index()
-                
-                fig = px.line(
-                    time_stats,
-                    x='date',
-                    y='taux_regularite',
-                    title="Évolution de la Régularité dans le Temps",
-                    labels={'date': 'Date', 'taux_regularite': 'Taux de Régularité (%)'}
-                )
-                fig.update_traces(line_color='#1f77b4', line_width=2)
-                
-                return fig
-        
-        # ═══════════════════════════════════════════════════════════════
-        # GRAPHIQUE DE DISTRIBUTION
-        # ═══════════════════════════════════════════════════════════════
-        
-        elif any(word in question_lower for word in ['distribution', 'histogramme', 'histogram', 'répartition']):
-            fig = px.histogram(
-                df,
-                x='taux_regularite',
-                nbins=30,
-                title="Distribution des Taux de Régularité",
-                labels={'taux_regularite': 'Taux de Régularité (%)', 'count': 'Nombre d\'enregistrements'}
+        # Créer le graphique
+        if 'camembert' in question_lower or 'pie' in question_lower:
+            fig = px.pie(
+                values=region_stats.values,
+                names=region_stats.index,
+                title="Régularité par Région"
             )
-            
-            return fig
-        
-        # ═══════════════════════════════════════════════════════════════
-        # GRAPHIQUE MÉTÉO (si données enrichies)
-        # ═══════════════════════════════════════════════════════════════
-        
-        elif any(word in question_lower for word in ['météo', 'meteo', 'neige', 'pluie', 'vent', 'température']):
-            if 'weather_snowfall' in df.columns:
-                # Régularité selon les conditions de neige
-                df_snow = df.copy()
-                df_snow['snow_category'] = pd.cut(
-                    df_snow['weather_snowfall'],
-                    bins=[-0.1, 0, 5, 20, 1000],
-                    labels=['Pas de neige', 'Neige légère', 'Neige modérée', 'Forte neige']
-                )
-                
-                snow_stats = df_snow.groupby('snow_category')['taux_regularite'].mean()
-                
-                fig = px.bar(
-                    x=snow_stats.index,
-                    y=snow_stats.values,
-                    title="Impact de la Neige sur la Régularité",
-                    labels={'x': 'Condition de neige', 'y': 'Taux de Régularité (%)'},
-                    color=snow_stats.values,
-                    color_continuous_scale='Blues'
-                )
-                
-                return fig
-        
-        # ═══════════════════════════════════════════════════════════════
-        # GRAPHIQUE PAR DÉFAUT : TOP RÉGIONS
-        # ═══════════════════════════════════════════════════════════════
-        
         else:
-            # Graphique par défaut : top 10 régions
-            region_stats = df.groupby('region')['taux_regularite'].mean().sort_values(ascending=False).head(10)
-            
             fig = px.bar(
                 x=region_stats.index,
                 y=region_stats.values,
-                title="Top 10 Régions - Régularité Moyenne",
+                title="Régularité Moyenne par Région",
                 labels={'x': 'Région', 'y': 'Taux de Régularité (%)'},
                 color=region_stats.values,
                 color_continuous_scale='RdYlGn'
             )
             fig.update_layout(xaxis_tickangle=-45)
+        
+        return fig
+    
+    # ═══════════════════════════════════════════════════════════════
+    # GRAPHIQUE D'ÉVOLUTION TEMPORELLE
+    # ═══════════════════════════════════════════════════════════════
+    
+    elif any(word in question_lower for word in ['évolution', 'evolution', 'temps', 'tendance', 'courbe']):
+        if 'date' in df.columns:
+            # Évolution globale
+            time_stats = df.groupby('date')['taux_regularite'].mean().reset_index()
+            
+            fig = px.line(
+                time_stats,
+                x='date',
+                y='taux_regularite',
+                title="Évolution de la Régularité dans le Temps",
+                labels={'date': 'Date', 'taux_regularite': 'Taux de Régularité (%)'}
+            )
+            fig.update_traces(line_color='#1f77b4', line_width=2)
             
             return fig
     
+    # ═══════════════════════════════════════════════════════════════
+    # GRAPHIQUE DE DISTRIBUTION
+    # ═══════════════════════════════════════════════════════════════
     
-        # ═══════════════════════════════════════════════════════════════════════
-        # PAGE : 📈 VISUALISATIONS PERSONNALISÉES
-        # ═══════════════════════════════════════════════════════════════════════
+    elif any(word in question_lower for word in ['distribution', 'histogramme', 'histogram', 'répartition']):
+        fig = px.histogram(
+            df,
+            x='taux_regularite',
+            nbins=30,
+            title="Distribution des Taux de Régularité",
+            labels={'taux_regularite': 'Taux de Régularité (%)', 'count': 'Nombre d\'enregistrements'}
+        )
         
-        elif page == "📈 Visualisations Personnalisées":
-            st.title("📈 Créateur de Visualisations")
+        return fig
+    
+    # ═══════════════════════════════════════════════════════════════
+    # GRAPHIQUE MÉTÉO (si données enrichies)
+    # ═══════════════════════════════════════════════════════════════
+    
+    elif any(word in question_lower for word in ['météo', 'meteo', 'neige', 'pluie', 'vent', 'température']):
+        if 'weather_snowfall' in df.columns:
+            # Régularité selon les conditions de neige
+            df_snow = df.copy()
+            df_snow['snow_category'] = pd.cut(
+                df_snow['weather_snowfall'],
+                bins=[-0.1, 0, 5, 20, 1000],
+                labels=['Pas de neige', 'Neige légère', 'Neige modérée', 'Forte neige']
+            )
             
-            st.markdown("Créez vos propres graphiques en sélectionnant les paramètres ci-dessous.")
+            snow_stats = df_snow.groupby('snow_category')['taux_regularite'].mean()
             
-            col1, col2 = st.columns([1, 2])
+            fig = px.bar(
+                x=snow_stats.index,
+                y=snow_stats.values,
+                title="Impact de la Neige sur la Régularité",
+                labels={'x': 'Condition de neige', 'y': 'Taux de Régularité (%)'},
+                color=snow_stats.values,
+                color_continuous_scale='Blues'
+            )
             
-            with col1:
-                st.subheader("⚙️ Configuration")
-                
-                # Type de graphique
-                chart_type = st.selectbox(
-                    "Type de graphique",
-                    ["Ligne", "Barre", "Scatter", "Histogramme", "Box Plot"]
-                )
-                
-                # Colonnes disponibles
-                numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-                all_cols = df.columns.tolist()
-                
-                # Sélection des axes
-                x_col = st.selectbox("Axe X", all_cols)
-                
-                if chart_type != "Histogramme":
-                    y_col = st.selectbox("Axe Y", numeric_cols)
-                else:
-                    y_col = None
-                
-                # Couleur (optionnel)
-                use_color = st.checkbox("Ajouter une dimension de couleur")
-                if use_color:
-                    categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
-                    color_col = st.selectbox("Colonne de couleur", categorical_cols)
-                else:
-                    color_col = None
-                
-                # Filtres
-                st.markdown("---")
-                st.subheader("🔍 Filtres")
-                
-                if 'region' in df.columns:
-                    regions = ['Toutes'] + sorted(df['region'].unique().tolist())
-                    filter_region = st.multiselect("Régions", regions, default=['Toutes'])
-                else:
-                    filter_region = ['Toutes']
-                
-                # Bouton de génération
-                generate_viz = st.button("🎨 Générer le graphique", use_container_width=True)
-            
-            with col2:
-                st.subheader("📊 Résultat")
-                
-                if generate_viz:
-                    # Appliquer les filtres
-                    df_viz = df.copy()
-                    
-                    if 'Toutes' not in filter_region and 'region' in df.columns:
-                        df_viz = df_viz[df_viz['region'].isin(filter_region)]
-                    
-                    # Créer la visualisation
-                    fig = plot_custom_visualization(df_viz, chart_type, x_col, y_col, color_col)
-                    
-                    if fig:
-                        st.plotly_chart(fig, use_container_width=True)
-                        
-                        # Bouton de téléchargement
-                        st.download_button(
-                            label="💾 Télécharger le graphique (HTML)",
-                            data=fig.to_html(),
-                            file_name=f"chart_{chart_type.lower()}_{x_col}.html",
-                            mime="text/html"
-                        )
-                    else:
-                        st.warning("⚠️ Impossible de créer le graphique avec ces paramètres.")
-                else:
-                    st.info("👈 Configurez votre graphique et cliquez sur 'Générer'")
-
+            return fig
+    
+    # ═══════════════════════════════════════════════════════════════
+    # GRAPHIQUE PAR DÉFAUT : TOP RÉGIONS
+    # ═══════════════════════════════════════════════════════════════
+    
+    else:
+        # Graphique par défaut : top 10 régions
+        region_stats = df.groupby('region')['taux_regularite'].mean().sort_values(ascending=False).head(10)
+        
+        fig = px.bar(
+            x=region_stats.index,
+            y=region_stats.values,
+            title="Top 10 Régions - Régularité Moyenne",
+            labels={'x': 'Région', 'y': 'Taux de Régularité (%)'},
+            color=region_stats.values,
+            color_continuous_scale='RdYlGn'
+        )
+        fig.update_layout(xaxis_tickangle=-45)
+        
+        return fig
 # ═══════════════════════════════════════════════════════════════════════
 # PAGE : 🔍 EXPLORATEUR DE DONNÉES
 # ═══════════════════════════════════════════════════════════════════════
