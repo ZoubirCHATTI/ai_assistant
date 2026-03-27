@@ -20,7 +20,7 @@ class Config:
     # Azure Storage
     AZURE_CONNECTION_STRING = st.secrets.get("AZURE_STORAGE_CONNECTION_STRING", "")
     AZURE_CONTAINER_NAME = st.secrets.get("AZURE_CONTAINER_NAME", "ztacontainer")
-    AZURE_BLOB_NAME = st.secrets.get("AZURE_BLOB_NAME", "ter_ponctualite_2024_2025.xlsx")
+    AZURE_BLOB_NAME = st.secrets.get("AZURE_BLOB_NAME", "ter_ponctualite_2024_2025.csv")
 
     # Mistral AI
     MISTRAL_API_KEY = st.secrets.get("MISTRAL_API_KEY", "")
