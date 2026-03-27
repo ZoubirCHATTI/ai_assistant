@@ -272,63 +272,183 @@ elif page == "📊 Dashboard":
 
 elif page == "💬 Chat IA":
     st.title("💬 Chat avec l'Assistant IA")
-    
-    if st.session_state.agent is None:
-        st.error("❌ L'agent IA n'est pas disponible. Vérifiez votre clé API Mistral.")
-    else:
-        st.markdown("""
-        Posez vos questions en français sur les données TER. L'IA analysera les données et vous donnera des réponses précises.
+
+    st.markdown("""
+    Posez vos questions en français sur les données TER. L'IA analysera les données et vous donnera des réponses précises.
+    """)
+
+    if not Config.MISTRAL_API_KEY:
+        st.error("❌ **Clé API Mistral non configurée**")
+        st.info("""
+        **Pour configurer la clé API :**
+        
+        **En local :**
+        1. Créez un fichier `.env` dans le dossier du projet
+        2. Ajoutez : `MISTRAL_API_KEY=votre_clé_ici`
+        3. Obtenez une clé gratuite sur : https://console.mistral.ai/
+        
+        **Sur Streamlit Cloud :**
+        1. Allez dans **Settings** → **Secrets**
+        2. Ajoutez : `MISTRAL_API_KEY = "votre_clé_ici"`
+        3. Redémarrez l'application
         """)
-        
-        # Exemples de questions
-        with st.expander("💡 Exemples de questions", expanded=False):
+
+        with st.expander("🔑 Comment obtenir une clé Mistral ?"):
             st.markdown("""
-            - Quelle est la régularité moyenne globale ?
-            - Quelle région a la meilleure ponctualité ?
-            - Combien de trains ont été supprimés ?
-            - Montre-moi l'évolution de la régularité
-            - Quelles sont les 5 pires régions ?
-            - Donne-moi les statistiques sur les trains
+            1. Allez sur https://console.mistral.ai/
+            2. Créez un compte (gratuit)
+            3. Allez dans "API Keys"
+            4. Cliquez sur "Create new key"
+            5. Copiez la clé et ajoutez-la dans votre `.env`
             """)
-        
-        # Affichage de l'historique
-        for message in st.session_state.chat_history:
-            if message['role'] == 'user':
-                st.markdown(f'<div class="chat-message user-message">👤 **Vous** : {message["content"]}</div>', unsafe_allow_html=True)
-            else:
-                st.markdown(f'<div class="chat-message assistant-message">🤖 **Assistant** : {message["content"]}</div>', unsafe_allow_html=True)
-        
-        # Zone de saisie
-        user_question = st.chat_input("Posez votre question ici...")
-        
-        if user_question:
-            # Ajouter la question à l'historique
-            st.session_state.chat_history.append({
-                'role': 'user',
-                'content': user_question
-            })
+
+        st.stop()
+
+    agent_df = st.session_state.df_enriched if st.session_state.df_enriched is not None else df
+
+    df_hash = hash(str(agent_df.shape) + str(agent_df.columns.tolist()))
+
+    if (st.session_state.agent is None or
+            st.session_state.current_df_hash != df_hash):
+
+        try:
+            with st.spinner("🤖 Initialisation de l'agent IA..."):
+                st.session_state.agent = TERAnalysisAgent(agent_df)
+                st.session_state.current_df_hash = df_hash
+
+            st.success("✅ Agent IA prêt !")
+
+        except Exception as e:
+            st.error("❌ **Erreur lors de l'initialisation de l'agent**")
+            st.error(f"**Détail :** {str(e)}")
+
+            with st.expander("🔍 Informations de débogage"):
+                st.code(f"""
+Erreur: {type(e).__name__}
+Message: {str(e)}
+
+Clé API présente: {bool(Config.MISTRAL_API_KEY)}
+Clé API (premiers caractères): {Config.MISTRAL_API_KEY[:10] if Config.MISTRAL_API_KEY else 'N/A'}...
+DataFrame shape: {agent_df.shape}
+                """)
+
+                import traceback
+                st.code(traceback.format_exc())
+
+            st.info("""
+            **Causes possibles :**
+            - ❌ Clé API Mistral invalide ou expirée
+            - 🌐 Problème de connexion internet
+            - 📊 Problème avec les données
+            - 💰 Quota API dépassé
             
-            # Obtenir la réponse de l'agent
-            with st.spinner("🤔 L'IA réfléchit..."):
-                try:
-                    response = st.session_state.agent.ask(user_question)
-                    
-                    # Ajouter la réponse à l'historique
-                    st.session_state.chat_history.append({
-                        'role': 'assistant',
-                        'content': response
-                    })
-                    
-                    st.rerun()
-                    
-                except Exception as e:
-                    st.error(f"❌ Erreur : {e}")
+            **Solutions :**
+            1. Vérifiez que votre clé API est valide sur https://console.mistral.ai/
+            2. Vérifiez votre connexion internet
+            3. Vérifiez votre quota API
+            4. Essayez de régénérer une nouvelle clé API
+            """)
+
+            st.stop()
+
+    col_header1, col_header2 = st.columns([4, 1])
+
+    with col_header2:
+        if st.button("🔄 Recharger", help="Réinitialiser l'agent IA"):
+            st.session_state.agent = None
+            st.session_state.current_df_hash = None
+            st.rerun()
+
+    with st.expander("💡 Exemples de questions", expanded=False):
+        st.markdown("""
+        **📊 Questions générales :**
+        - Quelle est la régularité moyenne globale ?
+        - Combien de trains ont été supprimés ?
+        - Donne-moi un résumé des données
         
-        # Bouton pour effacer l'historique
+        **🗺️ Questions par région :**
+        - Quelle région a la meilleure ponctualité ?
+        - Quelles sont les 5 pires régions ?
+        - Compare la Bretagne et la Normandie
+        
+        **📈 Questions d'évolution :**
+        - Montre-moi l'évolution de la régularité
+        - Comment a évolué la ponctualité en 2024 ?
+        
+        **🌦️ Questions météo (si données enrichies) :**
+        - Quel est l'impact de la neige sur les retards ?
+        - Analyse l'impact du vent fort
+        """)
+
+    st.markdown("---")
+
+    chat_container = st.container()
+
+    with chat_container:
+        if not st.session_state.chat_history:
+            st.info("👋 Bonjour ! Posez-moi une question sur les données TER.")
+        else:
+            for message in st.session_state.chat_history:
+                if message['role'] == 'user':
+                    st.markdown(
+                        f'<div class="chat-message user-message">'
+                        f'👤 **Vous** : {message["content"]}'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+                else:
+                    st.markdown(
+                        f'<div class="chat-message assistant-message">'
+                        f'🤖 **Assistant** : {message["content"]}'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+
+    user_question = st.chat_input("Posez votre question ici...")
+
+    if user_question:
+        st.session_state.chat_history.append({
+            'role': 'user',
+            'content': user_question
+        })
+
+        with st.spinner("🤔 L'IA réfléchit..."):
+            try:
+                response = st.session_state.agent.ask(user_question)
+
+                st.session_state.chat_history.append({
+                    'role': 'assistant',
+                    'content': response
+                })
+
+            except Exception as e:
+                error_response = f"❌ **Erreur :** {str(e)}\n\nDésolé, je n'ai pas pu traiter votre question. Essayez de la reformuler ou vérifiez votre connexion."
+
+                st.session_state.chat_history.append({
+                    'role': 'assistant',
+                    'content': error_response
+                })
+
+        st.rerun()
+
+    st.markdown("---")
+
+    col1, col2, col3 = st.columns([1, 1, 2])
+
+    with col1:
         if st.button("🗑️ Effacer l'historique"):
             st.session_state.chat_history = []
             st.rerun()
 
+    with col2:
+        nb_messages = len(st.session_state.chat_history)
+        st.metric("💬 Messages", nb_messages)
+
+    with col3:
+        if st.session_state.df_enriched is not None:
+            st.success("✅ Données enrichies avec météo disponibles")
+        else:
+            st.info("ℹ️ Utilisez 'Analyse Météo' pour enrichir les données")
 # ═══════════════════════════════════════════════════════════════════════
 # PAGE : 📈 VISUALISATIONS PERSONNALISÉES
 # ═══════════════════════════════════════════════════════════════════════
