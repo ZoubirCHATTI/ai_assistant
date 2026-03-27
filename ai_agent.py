@@ -95,7 +95,7 @@ class TERAnalysisAgent:
             
             return "Données insuffisantes pour l'analyse"
                 
-                df = self.df  # Référence locale pour les closures
+        df = self.df  # Référence locale pour les closures
                 
         @tool
         def calculer_regularite_globale() -> str:
