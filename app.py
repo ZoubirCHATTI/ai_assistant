@@ -30,6 +30,215 @@ from data_loader import TERDataLoader
 
 # Au début de app.py, après les imports
 
+# CONFIGURATION DE LA PAGE
+# ═══════════════════════════════════════════════════════════════════════
+
+st.set_page_config(
+    page_title="TER Analysis Dashboard",
+    page_icon="🚆",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# CSS personnalisé
+st.markdown("""
+<style>
+.chat-message {
+    padding: 1rem;
+    border-radius: 0.5rem;
+    margin-bottom: 1rem;
+    display: flex;
+    flex-direction: column;
+}
+.user-message {
+    background-color: #e3f2fd;
+    border-left: 4px solid #2196f3;
+}
+.assistant-message {
+    background-color: #f5f5f5;
+    border-left: 4px solid #4caf50;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ═══════════════════════════════════════════════════════════════════════
+# INITIALISATION DE LA SESSION
+# ═══════════════════════════════════════════════════════════════════════
+
+if 'chat_history' not in st.session_state:
+    st.session_state.chat_history = []
+
+if 'agent' not in st.session_state:
+    st.session_state.agent = None
+
+if 'df_enriched' not in st.session_state:
+    st.session_state.df_enriched = None
+
+if 'current_df_hash' not in st.session_state:
+    st.session_state.current_df_hash = None
+
+# ═══════════════════════════════════════════════════════════════════════
+# CHARGEMENT DES DONNÉES
+# ═══════════════════════════════════════════════════════════════════════
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_ter_data():
+    """Charge les données TER avec cache (1 heure)"""
+    try:
+        loader = TERDataLoader()
+        df = loader.load_data()
+        return df
+    except Exception as e:
+        st.error(f"❌ Erreur lors du chargement des données : {e}")
+        import traceback
+        st.code(traceback.format_exc())
+        return None
+
+# Charger les données
+with st.spinner("⏳ Chargement des données TER depuis l'API SNCF..."):
+    df = load_ter_data()
+
+# Vérifier que les données sont chargées
+if df is None or len(df) == 0:
+    st.error("❌ Impossible de charger les données TER")
+    st.info("""
+    **Causes possibles :**
+    - L'API SNCF est temporairement indisponible
+    - Problème de connexion internet
+    - Le dataset n'existe plus ou a changé d'URL
+    
+    **Solution :**
+    - Vérifiez votre connexion internet
+    - Réessayez dans quelques minutes
+    - Contactez le support si le problème persiste
+    """)
+    st.stop()
+
+# Afficher un résumé
+st.success(f"✅ {len(df):,} enregistrements chargés depuis l'API SNCF")
+
+# Afficher des infos sur les données
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    if 'taux_regularite' in df.columns:
+        avg_reg = df['taux_regularite'].mean()
+        st.metric("📊 Régularité moyenne", f"{avg_reg:.2f}%")
+
+with col2:
+    if 'region' in df.columns:
+        nb_regions = df['region'].nunique()
+        st.metric("🗺️ Régions", nb_regions)
+
+with col3:
+    if 'date' in df.columns:
+        date_min = df['date'].min()
+        date_max = df['date'].max()
+        nb_mois = (date_max.year - date_min.year) * 12 + (date_max.month - date_min.month) + 1
+        st.metric("📅 Période", f"{nb_mois} mois")
+
+with col4:
+    st.metric("📦 Enregistrements", f"{len(df):,}")
+
+st.markdown("---")
+
+# ═══════════════════════════════════════════════════════════════════════
+# INITIALISATION DES ANALYSEURS
+# ═══════════════════════════════════════════════════════════════════════
+
+# Initialiser l'analyseur météo
+weather_analyzer = WeatherAnalyzer(df)
+
+# ═══════════════════════════════════════════════════════════════════════
+# SIDEBAR - NAVIGATION
+# ═══════════════════════════════════════════════════════════════════════
+
+st.sidebar.title("🚆 TER Analysis Dashboard")
+st.sidebar.markdown("---")
+
+page = st.sidebar.radio(
+    "Navigation",
+    ["🏠 Accueil", "📊 Vue d'ensemble", "🌦️ Analyse Météo", "💬 Chat IA"],
+    index=0
+)
+
+st.sidebar.markdown("---")
+st.sidebar.info("""
+**À propos**
+
+Dashboard d'analyse de la régularité des trains TER en France.
+
+**Données :** API SNCF Open Data  
+**IA :** Mistral AI  
+**Météo :** Open-Meteo
+""")
+
+# ═══════════════════════════════════════════════════════════════════════
+# PAGES
+# ═══════════════════════════════════════════════════════════════════════
+
+# Page Accueil
+if page == "🏠 Accueil":
+    st.title("🚆 Dashboard d'Analyse TER")
+    
+    st.markdown("""
+    ## Bienvenue sur le Dashboard d'Analyse de la Régularité des TER
+    
+    Ce tableau de bord vous permet d'analyser la ponctualité des trains TER en France.
+    
+    ### 📊 Fonctionnalités disponibles :
+    
+    #### 🏠 **Accueil**
+    - Vue d'ensemble du projet
+    - Informations sur les données
+    
+    #### 📊 **Vue d'ensemble**
+    - Statistiques générales de régularité
+    - Comparaison par région
+    - Évolution temporelle
+    - Visualisations interactives
+    
+    #### 🌦️ **Analyse Météo**
+    - Enrichissement des données avec la météo
+    - Impact de la neige, du vent, des précipitations
+    - Corrélation météo-régularité
+    
+    #### 💬 **Chat IA**
+    - Posez vos questions en langage naturel
+    - Analyses personnalisées
+    - Réponses basées sur les données réelles
+    
+    ### 🚀 Pour commencer :
+    
+    1. Explorez la **Vue d'ensemble** pour voir les statistiques globales
+    2. Enrichissez avec la **Météo** pour des analyses approfondies
+    3. Utilisez le **Chat IA** pour des questions spécifiques
+    """)
+    
+    st.markdown("---")
+    
+    # Afficher quelques stats rapides
+    st.subheader("📈 Aperçu rapide des données")
+    
+    if 'taux_regularite' in df.columns and 'region' in df.columns:
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Top 5 régions
+            top5 = df.groupby('region')['taux_regularite'].mean().nlargest(5)
+            st.write("**🏆 Top 5 régions les plus régulières**")
+            for i, (region, taux) in enumerate(top5.items(), 1):
+                st.write(f"{i}. {region}: {taux:.2f}%")
+        
+        with col2:
+            # Bottom 5 régions
+            bottom5 = df.groupby('region')['taux_regularite'].mean().nsmallest(5)
+            st.write("**⚠️ Top 5 régions les moins régulières**")
+            for i, (region, taux) in enumerate(bottom5.items(), 1):
+                st.write(f"{i}. {region}: {taux:.2f}%")
+
+
+"""
 # ═══════════════════════════════════════════════════════════════════════
 # CHARGEMENT DES DONNÉES
 # ═══════════════════════════════════════════════════════════════════════
@@ -302,7 +511,7 @@ if page == "🏠 Accueil":
         - Rechercher des valeurs spécifiques
         - Exporter vos sélections
         """)
-
+"""
 # ═══════════════════════════════════════════════════════════════════════
 # PAGE : 📊 DASHBOARD
 # ═══════════════════════════════════════════════════════════════════════
