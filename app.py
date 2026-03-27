@@ -489,28 +489,28 @@ if page == "🏠 Accueil":
     st.subheader("🚀 Démarrage Rapide")
     
     with st.expander("📘 Comment utiliser l'Assistant ?", expanded=True):
-        st.markdown("""
-        ### 1️⃣ Explorez le Dashboard
-        Accédez à la page **📊 Dashboard** pour voir une vue d'ensemble des KPIs et métriques clés.
+        st.markdown(
+        "### 1️⃣ Explorez le Dashboard
+        "Accédez à la page **📊 Dashboard** pour voir une vue d'ensemble des KPIs et métriques clés.
         
-        ### 2️⃣ Posez vos Questions
-        Allez dans **💬 Chat IA** et posez vos questions en français :
-        - "Quelle est la régularité moyenne ?"
-        - "Quelles sont les pires régions ?"
-        - "Combien de trains ont été supprimés ?"
+       " ### 2️⃣ Posez vos Questions
+        "Allez dans **💬 Chat IA** et posez vos questions en français :
+        "- "Quelle est la régularité moyenne ?"
+        "- "Quelles sont les pires régions ?"
+        "- "Combien de trains ont été supprimés ?"
         
-        ### 3️⃣ Créez des Visualisations
-        Dans **📈 Visualisations Personnalisées**, créez vos propres graphiques :
-        - Choisissez le type de graphique
-        - Sélectionnez les colonnes
-        - Appliquez des filtres
+        "### 3️⃣ Créez des Visualisations"
+        "Dans **📈 Visualisations Personnalisées**, créez vos propres graphiques :"
+        "- Choisissez le type de graphique"
+        "- Sélectionnez les colonnes"
+        "- Appliquez des filtres"
         
-        ### 4️⃣ Explorez les Données
-        Utilisez **🔍 Explorateur de Données** pour :
-        - Filtrer par région, date, etc.
-        - Rechercher des valeurs spécifiques
-        - Exporter vos sélections
-        """)
+        "### 4️⃣ Explorez les Données"
+        "Utilisez **🔍 Explorateur de Données** pour :"
+        "- Filtrer par région, date, etc."
+        "- Rechercher des valeurs spécifiques"
+        "- Exporter vos sélections"
+        )
 """
 # ═══════════════════════════════════════════════════════════════════════
 # PAGE : 📊 DASHBOARD
