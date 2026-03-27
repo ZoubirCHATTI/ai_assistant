@@ -293,7 +293,7 @@ st.set_page_config(
 st.markdown("""
     <style>
     .main-header {
-        font-size: 3rem;
+        #font-size: 3rem;
         font-weight: bold;
         color: #1f77b4;
         text-align: center;
