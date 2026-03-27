@@ -572,13 +572,13 @@ elif page == "💬 Chat IA":
     Posez vos questions en français sur les données TER. L'IA peut analyser les données **ET générer des graphiques** automatiquement !
     """)
 
-    if not Config.GROQ_API_KEY:
-        st.error("❌ **Clé API Groq non configurée**")
+    if not Config.MISTRAL_API_KEY:
+        st.error("❌ **Clé API Mistral non configurée**")
 
         st.markdown("""
-        ### 🔑 Comment obtenir une clé API Groq (gratuite) ?
+        ### 🔑 Comment obtenir une clé API Mistral (gratuite) ?
         
-        1. **Créez un compte** sur https://console.groq.com/
+        1. **Créez un compte** sur https://console.mistral.ai/
         2. **Connectez-vous** et allez dans **"API Keys"**
         3. Cliquez sur **"Create API Key"**
         4. **Copiez** la clé générée
@@ -588,12 +588,12 @@ elif page == "💬 Chat IA":
         **En local :**
 ```bash
         # Créez un fichier .env
-        GROQ_API_KEY=votre_clé_ici
+        MISTRAL_API_KEY=votre_clé_ici
 ```
         
         **Sur Streamlit Cloud :**
         - Settings → Secrets
-        - Ajoutez : `GROQ_API_KEY = "votre_clé_ici"`
+        - Ajoutez : `MISTRAL_API_KEY = "votre_clé_ici"`
         """)
 
         st.stop()
