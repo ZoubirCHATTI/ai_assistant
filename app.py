@@ -288,7 +288,7 @@ st.set_page_config(
     layout=Config.LAYOUT,
     initial_sidebar_state="expanded"
 )
-
+"""
 # Style CSS personnalisé
 st.markdown("""
     <style>
@@ -326,7 +326,7 @@ st.markdown("""
     }
     </style>
 """, unsafe_allow_html=True)
-
+"""
 # ═══════════════════════════════════════════════════════════════════════
 # VÉRIFICATION DE LA CONFIGURATION
 # ═══════════════════════════════════════════════════════════════════════
