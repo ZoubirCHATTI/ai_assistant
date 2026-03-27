@@ -16,3 +16,5 @@ langgraph>=0.0.40
 python-dotenv
 numpy
 scipy
+
+pandas
