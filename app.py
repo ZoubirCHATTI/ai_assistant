@@ -22,7 +22,7 @@ from visualizations import (
     plot_heatmap_regularite,
     plot_custom_visualization
 )
-from data_loader import TERDataLoader  # ← AJOUTER CETTE LIGNE
+from data_loader import TERDataLoader  
 from ai_agent import TERAnalysisAgent
 # Ajoute cet import avec les autres imports
 from weather_analyzer import WeatherAnalyzer
