@@ -454,34 +454,34 @@ if page == "🏠 Accueil":
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("""
-        #### 📊 Dashboard Interactif
-        - KPIs en temps réel
-        - Graphiques dynamiques
-        - Analyse par région et période
-        - Export des visualisations
+        st.markdown(
+        "#### 📊 Dashboard Interactif"
+        "- KPIs en temps réel"
+        "- Graphiques dynamiques"
+        "- Analyse par région et période"
+        "- Export des visualisations"
         
-        #### 💬 Chat IA Conversationnel
-        - Questions en langage naturel
-        - Réponses contextualisées
-        - Historique des conversations
-        - Suggestions intelligentes
-        """)
+        "#### 💬 Chat IA Conversationnel"
+        "- Questions en langage naturel"
+        "- Réponses contextualisées"
+        "- Historique des conversations"
+        "- Suggestions intelligentes"
+        )
     
     with col2:
-        st.markdown("""
-        #### 📈 Visualisations Personnalisées
-        - Créateur de graphiques
-        - Multiples types de charts
-        - Filtres avancés
-        - Exports haute résolution
+        st.markdown(
+        "#### 📈 Visualisations Personnalisées"
+        "- Créateur de graphiques"
+        "- Multiples types de charts"
+        "- Filtres avancés"
+        "- Exports haute résolution"
         
-        #### 🔍 Explorateur de Données
-        - Filtrage multi-critères
-        - Recherche avancée
-        - Export CSV/Excel
-        - Statistiques détaillées
-        """)
+        "#### 🔍 Explorateur de Données"
+        "- Filtrage multi-critères"
+        "- Recherche avancée"
+        "- Export CSV/Excel"
+        "- Statistiques détaillées"
+        )
     
     st.markdown("---")
     
