@@ -426,12 +426,12 @@ if page == "🏠 Accueil":
     with col2:
         if summary['date_range']:
             min_date, max_date = summary['date_range']
-            st.success(f"""
-            ### 📅 Période
-            - **Du** {min_date.strftime('%d/%m/%Y')}
-            - **Au** {max_date.strftime('%d/%m/%Y')}
-            - **{(max_date - min_date).days}** jours
-            """)
+            st.success(
+            f"### 📅 Période"
+            f"- **Du** {min_date.strftime('%d/%m/%Y')}"
+            f"- **Au** {max_date.strftime('%d/%m/%Y')}"
+            f"- **{(max_date - min_date).days}** jours"
+            )
         else:
             st.success("### 📅 Période\nDonnées disponibles")
     
