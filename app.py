@@ -420,7 +420,7 @@ if page == "🏠 Accueil":
         ### 📊 Dataset
         - **{summary['total_rows']:,}** enregistrements
         - **{summary['total_columns']}** colonnes
-        - **{summary['memory_usage']:.2f}** MB en mémoire
+        - **{summary['memory_usage']:.2f} MB** en mémoire
         """)
     
     with col2:
