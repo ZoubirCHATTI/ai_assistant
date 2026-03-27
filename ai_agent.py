@@ -2,18 +2,16 @@
 # -*- coding: utf-8 -*-
 """
 Agent IA conversationnel pour l'analyse des données TER
-Capacité à générer des graphiques et des analyses textuelles
 """
 
 from mistralai import Mistral
 import pandas as pd
-import json
-from typing import Dict, Any, Optional, Tuple
+from typing import Tuple, Optional
 from config import Config
 
 
 class TERAnalysisAgent:
-    """Agent IA pour analyser les données TER avec génération de graphiques"""
+    """Agent IA pour analyser les données TER"""
     
     def __init__(self, df: pd.DataFrame):
         """
@@ -40,37 +38,100 @@ class TERAnalysisAgent:
             f"📋 Colonnes : {', '.join(self.df.columns.tolist())}"
         ]
         
-        # Ajouter des statistiques selon les colonnes disponibles
+        # Ajouter des statistiques
         if 'taux_regularite' in self.df.columns:
             avg_reg = self.df['taux_regularite'].mean()
-            min_reg = self.df['taux_regularite'].min()
-            max_reg = self.df['taux_regularite'].max()
-            context_parts.append(f"📈 Régularité : moyenne={avg_reg:.2f}%, min={min_reg:.2f}%, max={max_reg:.2f}%")
+            context_parts.append(f"📈 Régularité moyenne : {avg_reg:.2f}%")
         
         if 'region' in self.df.columns:
             nb_regions = self.df['region'].nunique()
-            regions = self.df['region'].unique().tolist()[:10]
-            context_parts.append(f"🗺️ Régions : {nb_regions} régions ({', '.join(regions)}...)")
-        
-        if 'date' in self.df.columns:
-            date_min = self.df['date'].min()
-            date_max = self.df['date'].max()
-            context_parts.append(f"📅 Période : du {date_min} au {date_max}")
-        
-        # Vérifier si données météo présentes
-        weather_cols = [col for col in self.df.columns if 'temperature' in col.lower() or 'precipitation' in col.lower() or 'neige' in col.lower()]
-        if weather_cols:
-            context_parts.append(f"🌦️ Données météo disponibles : {', '.join(weather_cols[:5])}")
+            context_parts.append(f"🗺️ Nombre de régions : {nb_regions}")
         
         return "\n".join(context_parts)
     
     def _create_system_prompt(self) -> str:
         """Crée le prompt système pour l'agent"""
         
-        return f"""Tu es un assistant IA expert en analyse de données ferroviaires TER (Trains Express Régionaux) en France.
+        return f"""Tu es un assistant IA expert en analyse de données ferroviaires TER en France.
 
 **Contexte des données disponibles :**
 {self.data_context}
 
 **Tes capacités :**
-1. ✅ Analyser les données et
+- Analyser les données et répondre à des questions
+- Calculer des statistiques
+- Faire des comparaisons entre régions
+- Analyser les tendances temporelles
+
+**Instructions :**
+- Réponds en français de manière claire et concise
+- Utilise des émojis pour rendre la réponse agréable
+- Fournis des chiffres précis quand c'est possible
+- Si tu ne peux pas répondre, dis-le clairement
+
+**Colonnes disponibles :**
+{', '.join(self.df.columns.tolist())}
+
+Réponds de façon professionnelle et précise !"""
+    
+    def ask(self, question: str) -> str:
+        """
+        Pose une question à l'agent
+        
+        Args:
+            question: Question de l'utilisateur
+            
+        Returns:
+            Réponse de l'agent
+        """
+        print(f"\n🤔 Question reçue : {question}")
+        
+        # Ajouter la question à l'historique
+        self.conversation_history.append({
+            "role": "user",
+            "content": question
+        })
+        
+        # Créer les messages pour l'API
+        messages = [
+            {
+                "role": "system",
+                "content": self._create_system_prompt()
+            }
+        ] + self.conversation_history
+        
+        try:
+            # Appeler l'API Mistral
+            response = self.client.chat.complete(
+                model=self.model,
+                messages=messages,
+                temperature=0.3,
+                max_tokens=1000
+            )
+            
+            # Extraire la réponse
+            assistant_response = response.choices[0].message.content
+            
+            # Ajouter la réponse à l'historique
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": assistant_response
+            })
+            
+            print(f"✅ Réponse générée")
+            
+            return assistant_response
+        
+        except Exception as e:
+            error_msg = f"❌ Erreur lors de l'appel à l'API : {str(e)}"
+            print(error_msg)
+            return error_msg
+    
+    def reset_conversation(self):
+        """Réinitialise l'historique de conversation"""
+        self.conversation_history = []
+        print("🔄 Historique de conversation réinitialisé")
+    
+    def get_conversation_length(self) -> int:
+        """Retourne le nombre de messages dans l'historique"""
+        return len(self.conversation_history)
