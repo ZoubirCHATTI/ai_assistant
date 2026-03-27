@@ -416,12 +416,12 @@ if page == "🏠 Accueil":
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.info(f"""
-        ### 📊 Dataset
-        - **{summary['total_rows']:,}** enregistrements
-        - **{summary['total_columns']}** colonnes
-        - **{summary['memory_usage']:.2f} MB en mémoire
-        """)
+        st.info(
+            f"### 📊 Dataset\n"
+            f"- **{summary['total_rows']:,}** enregistrements\n"
+            f"- **{summary['total_columns']}** colonnes\n"
+            f"- **{summary['memory_usage']:.2f} MB** en mémoire"
+    )
     
     with col2:
         if summary['date_range']:
