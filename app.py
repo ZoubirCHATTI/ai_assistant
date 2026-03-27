@@ -316,7 +316,7 @@ elif page == "💬 Chat IA":
     st.title("💬 Chat avec l'Assistant IA")
     
     st.markdown("""
-    Posez vos questions en français sur les données TER. L'IA analysera les données et vous donnera des réponses précises.
+    Posez vos questions en français sur les données TER. L'IA peut analyser les données, générer des graphiques et vous donner des réponses précises.
     """)
     
     # ═══════════════════════════════════════════════════════════════
@@ -338,16 +338,6 @@ elif page == "💬 Chat IA":
         2. Ajoutez : `MISTRAL_API_KEY = "votre_clé_ici"`
         3. Redémarrez l'application
         """)
-        
-        with st.expander("🔑 Comment obtenir une clé Mistral ?"):
-            st.markdown("""
-            1. Allez sur https://console.mistral.ai/
-            2. Créez un compte (gratuit)
-            3. Allez dans "API Keys"
-            4. Cliquez sur "Create new key"
-            5. Copiez la clé et ajoutez-la dans votre `.env`
-            """)
-        
         st.stop()
     
     # ═══════════════════════════════════════════════════════════════
@@ -376,31 +366,8 @@ elif page == "💬 Chat IA":
             st.error(f"**Détail :** {str(e)}")
             
             with st.expander("🔍 Informations de débogage"):
-                st.code(f"""
-Erreur: {type(e).__name__}
-Message: {str(e)}
-
-Clé API présente: {bool(Config.MISTRAL_API_KEY)}
-Clé API (premiers caractères): {Config.MISTRAL_API_KEY[:10] if Config.MISTRAL_API_KEY else 'N/A'}...
-DataFrame shape: {agent_df.shape}
-                """)
-                
                 import traceback
                 st.code(traceback.format_exc())
-            
-            st.info("""
-            **Causes possibles :**
-            - ❌ Clé API Mistral invalide ou expirée
-            - 🌐 Problème de connexion internet
-            - 📊 Problème avec les données
-            - 💰 Quota API dépassé
-            
-            **Solutions :**
-            1. Vérifiez que votre clé API est valide sur https://console.mistral.ai/
-            2. Vérifiez votre connexion internet
-            3. Vérifiez votre quota API
-            4. Essayez de régénérer une nouvelle clé API
-            """)
             
             st.stop()
     
@@ -427,18 +394,21 @@ DataFrame shape: {agent_df.shape}
         - Combien de trains ont été supprimés ?
         - Donne-moi un résumé des données
         
+        **📈 Questions avec graphiques :**
+        - Montre-moi un graphique de la régularité par région
+        - Trace l'évolution de la ponctualité dans le temps
+        - Compare les 5 meilleures régions en graphique
+        - Dessine un histogramme des retards
+        - Fais un camembert des suppressions par région
+        
         **🗺️ Questions par région :**
         - Quelle région a la meilleure ponctualité ?
         - Quelles sont les 5 pires régions ?
         - Compare la Bretagne et la Normandie
         
-        **📈 Questions d'évolution :**
-        - Montre-moi l'évolution de la régularité
-        - Comment a évolué la ponctualité en 2024 ?
-        
         **🌦️ Questions météo (si données enrichies) :**
         - Quel est l'impact de la neige sur les retards ?
-        - Analyse l'impact du vent fort
+        - Analyse l'impact du vent fort avec un graphique
         """)
     
     st.markdown("---")
@@ -452,9 +422,9 @@ DataFrame shape: {agent_df.shape}
     
     with chat_container:
         if not st.session_state.chat_history:
-            st.info("👋 Bonjour ! Posez-moi une question sur les données TER.")
+            st.info("👋 Bonjour ! Posez-moi une question sur les données TER. Je peux générer des graphiques pour vous !")
         else:
-            for message in st.session_state.chat_history:
+            for idx, message in enumerate(st.session_state.chat_history):
                 if message['role'] == 'user':
                     st.markdown(
                         f'<div class="chat-message user-message">'
@@ -463,12 +433,17 @@ DataFrame shape: {agent_df.shape}
                         unsafe_allow_html=True
                     )
                 else:
+                    # Afficher le texte de la réponse
                     st.markdown(
                         f'<div class="chat-message assistant-message">'
                         f'🤖 **Assistant** : {message["content"]}'
                         f'</div>', 
                         unsafe_allow_html=True
                     )
+                    
+                    # Afficher le graphique si présent
+                    if 'figure' in message and message['figure'] is not None:
+                        st.plotly_chart(message['figure'], use_container_width=True, key=f"chart_{idx}")
     
     # ═══════════════════════════════════════════════════════════════
     # ZONE DE SAISIE
@@ -484,23 +459,47 @@ DataFrame shape: {agent_df.shape}
         })
         
         # Obtenir la réponse de l'agent
-        with st.spinner("🤔 L'IA réfléchit..."):
+        with st.spinner("🤔 L'IA réfléchit et génère des visualisations..."):
             try:
+                # Détecter si l'utilisateur demande un graphique
+                plot_keywords = [
+                    'graphique', 'graph', 'courbe', 'trace', 'dessine', 'montre',
+                    'visualise', 'affiche', 'camembert', 'histogramme', 'barres',
+                    'plot', 'chart', 'diagramme', 'évolution', 'compare', 'comparaison'
+                ]
+                
+                should_plot = any(keyword in user_question.lower() for keyword in plot_keywords)
+                
+                # Obtenir la réponse textuelle
                 response = st.session_state.agent.ask(user_question)
                 
-                # Ajouter la réponse à l'historique
-                st.session_state.chat_history.append({
+                # Créer le message de réponse
+                response_message = {
                     'role': 'assistant',
-                    'content': response
-                })
+                    'content': response,
+                    'figure': None
+                }
+                
+                # Générer un graphique si demandé
+                if should_plot:
+                    try:
+                        fig = generate_chart_from_question(user_question, agent_df)
+                        if fig is not None:
+                            response_message['figure'] = fig
+                            response_message['content'] += "\n\n📊 *Voici le graphique correspondant :*"
+                    except Exception as plot_error:
+                        response_message['content'] += f"\n\n⚠️ *Je n'ai pas pu générer le graphique : {str(plot_error)}*"
+                
+                # Ajouter la réponse à l'historique
+                st.session_state.chat_history.append(response_message)
                 
             except Exception as e:
-                error_response = f"❌ **Erreur :** {str(e)}\n\nDésolé, je n'ai pas pu traiter votre question. Essayez de la reformuler ou vérifiez votre connexion."
-                
-                st.session_state.chat_history.append({
+                error_response = {
                     'role': 'assistant',
-                    'content': error_response
-                })
+                    'content': f"❌ **Erreur :** {str(e)}\n\nDésolé, je n'ai pas pu traiter votre question. Essayez de la reformuler.",
+                    'figure': None
+                }
+                st.session_state.chat_history.append(error_response)
         
         st.rerun()
     
@@ -518,14 +517,155 @@ DataFrame shape: {agent_df.shape}
             st.rerun()
     
     with col2:
-        nb_messages = len(st.session_state.chat_history)
-        st.metric("💬 Messages", nb_messages)
+        nb_messages = len([m for m in st.session_state.chat_history if m['role'] == 'user'])
+        st.metric("💬 Questions", nb_messages)
     
     with col3:
         if st.session_state.df_enriched is not None:
             st.success("✅ Données enrichies avec météo disponibles")
         else:
             st.info("ℹ️ Utilisez 'Analyse Météo' pour enrichir les données")
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# FONCTION DE GÉNÉRATION DE GRAPHIQUES
+# ═══════════════════════════════════════════════════════════════════════
+
+def generate_chart_from_question(question: str, df: pd.DataFrame):
+    """
+    Génère un graphique en fonction de la question posée
+    
+    Args:
+        question: Question de l'utilisateur
+        df: DataFrame avec les données
+        
+    Returns:
+        Figure Plotly ou None
+    """
+    question_lower = question.lower()
+    
+    # Vérifier les colonnes nécessaires
+    if 'region' not in df.columns or 'taux_regularite' not in df.columns:
+        return None
+    
+    # ═══════════════════════════════════════════════════════════════
+    # GRAPHIQUE PAR RÉGION
+    # ═══════════════════════════════════════════════════════════════
+    
+    if any(word in question_lower for word in ['région', 'region', 'compare', 'meilleur', 'pire']):
+        # Calculer la moyenne par région
+        region_stats = df.groupby('region')['taux_regularite'].mean().sort_values(ascending=False)
+        
+        # Limiter aux top N si demandé
+        if 'top 5' in question_lower or '5 meilleur' in question_lower:
+            region_stats = region_stats.head(5)
+        elif 'top 10' in question_lower or '10 meilleur' in question_lower:
+            region_stats = region_stats.head(10)
+        elif '5 pire' in question_lower or 'bottom 5' in question_lower:
+            region_stats = region_stats.tail(5)
+        
+        # Créer le graphique
+        if 'camembert' in question_lower or 'pie' in question_lower:
+            fig = px.pie(
+                values=region_stats.values,
+                names=region_stats.index,
+                title="Régularité par Région"
+            )
+        else:
+            fig = px.bar(
+                x=region_stats.index,
+                y=region_stats.values,
+                title="Régularité Moyenne par Région",
+                labels={'x': 'Région', 'y': 'Taux de Régularité (%)'},
+                color=region_stats.values,
+                color_continuous_scale='RdYlGn'
+            )
+            fig.update_layout(xaxis_tickangle=-45)
+        
+        return fig
+    
+    # ═══════════════════════════════════════════════════════════════
+    # GRAPHIQUE D'ÉVOLUTION TEMPORELLE
+    # ═══════════════════════════════════════════════════════════════
+    
+    elif any(word in question_lower for word in ['évolution', 'evolution', 'temps', 'tendance', 'courbe']):
+        if 'date' in df.columns:
+            # Évolution globale
+            time_stats = df.groupby('date')['taux_regularite'].mean().reset_index()
+            
+            fig = px.line(
+                time_stats,
+                x='date',
+                y='taux_regularite',
+                title="Évolution de la Régularité dans le Temps",
+                labels={'date': 'Date', 'taux_regularite': 'Taux de Régularité (%)'}
+            )
+            fig.update_traces(line_color='#1f77b4', line_width=2)
+            
+            return fig
+    
+    # ═══════════════════════════════════════════════════════════════
+    # GRAPHIQUE DE DISTRIBUTION
+    # ═══════════════════════════════════════════════════════════════
+    
+    elif any(word in question_lower for word in ['distribution', 'histogramme', 'histogram', 'répartition']):
+        fig = px.histogram(
+            df,
+            x='taux_regularite',
+            nbins=30,
+            title="Distribution des Taux de Régularité",
+            labels={'taux_regularite': 'Taux de Régularité (%)', 'count': 'Nombre d\'enregistrements'}
+        )
+        
+        return fig
+    
+    # ═══════════════════════════════════════════════════════════════
+    # GRAPHIQUE MÉTÉO (si données enrichies)
+    # ═══════════════════════════════════════════════════════════════
+    
+    elif any(word in question_lower for word in ['météo', 'meteo', 'neige', 'pluie', 'vent', 'température']):
+        if 'weather_snowfall' in df.columns:
+            # Régularité selon les conditions de neige
+            df_snow = df.copy()
+            df_snow['snow_category'] = pd.cut(
+                df_snow['weather_snowfall'],
+                bins=[-0.1, 0, 5, 20, 1000],
+                labels=['Pas de neige', 'Neige légère', 'Neige modérée', 'Forte neige']
+            )
+            
+            snow_stats = df_snow.groupby('snow_category')['taux_regularite'].mean()
+            
+            fig = px.bar(
+                x=snow_stats.index,
+                y=snow_stats.values,
+                title="Impact de la Neige sur la Régularité",
+                labels={'x': 'Condition de neige', 'y': 'Taux de Régularité (%)'},
+                color=snow_stats.values,
+                color_continuous_scale='Blues'
+            )
+            
+            return fig
+    
+    # ═══════════════════════════════════════════════════════════════
+    # GRAPHIQUE PAR DÉFAUT : TOP RÉGIONS
+    # ═══════════════════════════════════════════════════════════════
+    
+    else:
+        # Graphique par défaut : top 10 régions
+        region_stats = df.groupby('region')['taux_regularite'].mean().sort_values(ascending=False).head(10)
+        
+        fig = px.bar(
+            x=region_stats.index,
+            y=region_stats.values,
+            title="Top 10 Régions - Régularité Moyenne",
+            labels={'x': 'Région', 'y': 'Taux de Régularité (%)'},
+            color=region_stats.values,
+            color_continuous_scale='RdYlGn'
+        )
+        fig.update_layout(xaxis_tickangle=-45)
+        
+        return fig
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # PAGE : 📈 VISUALISATIONS PERSONNALISÉES
