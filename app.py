@@ -667,86 +667,86 @@ elif page == "💬 Chat IA":
             return fig
     
     
-    # ═══════════════════════════════════════════════════════════════════════
-    # PAGE : 📈 VISUALISATIONS PERSONNALISÉES
-    # ═══════════════════════════════════════════════════════════════════════
-    
-    elif page == "📈 Visualisations Personnalisées":
-        st.title("📈 Créateur de Visualisations")
+        # ═══════════════════════════════════════════════════════════════════════
+        # PAGE : 📈 VISUALISATIONS PERSONNALISÉES
+        # ═══════════════════════════════════════════════════════════════════════
         
-        st.markdown("Créez vos propres graphiques en sélectionnant les paramètres ci-dessous.")
-        
-        col1, col2 = st.columns([1, 2])
-        
-        with col1:
-            st.subheader("⚙️ Configuration")
+        elif page == "📈 Visualisations Personnalisées":
+            st.title("📈 Créateur de Visualisations")
             
-            # Type de graphique
-            chart_type = st.selectbox(
-                "Type de graphique",
-                ["Ligne", "Barre", "Scatter", "Histogramme", "Box Plot"]
-            )
+            st.markdown("Créez vos propres graphiques en sélectionnant les paramètres ci-dessous.")
             
-            # Colonnes disponibles
-            numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-            all_cols = df.columns.tolist()
+            col1, col2 = st.columns([1, 2])
             
-            # Sélection des axes
-            x_col = st.selectbox("Axe X", all_cols)
-            
-            if chart_type != "Histogramme":
-                y_col = st.selectbox("Axe Y", numeric_cols)
-            else:
-                y_col = None
-            
-            # Couleur (optionnel)
-            use_color = st.checkbox("Ajouter une dimension de couleur")
-            if use_color:
-                categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
-                color_col = st.selectbox("Colonne de couleur", categorical_cols)
-            else:
-                color_col = None
-            
-            # Filtres
-            st.markdown("---")
-            st.subheader("🔍 Filtres")
-            
-            if 'region' in df.columns:
-                regions = ['Toutes'] + sorted(df['region'].unique().tolist())
-                filter_region = st.multiselect("Régions", regions, default=['Toutes'])
-            else:
-                filter_region = ['Toutes']
-            
-            # Bouton de génération
-            generate_viz = st.button("🎨 Générer le graphique", use_container_width=True)
-        
-        with col2:
-            st.subheader("📊 Résultat")
-            
-            if generate_viz:
-                # Appliquer les filtres
-                df_viz = df.copy()
+            with col1:
+                st.subheader("⚙️ Configuration")
                 
-                if 'Toutes' not in filter_region and 'region' in df.columns:
-                    df_viz = df_viz[df_viz['region'].isin(filter_region)]
+                # Type de graphique
+                chart_type = st.selectbox(
+                    "Type de graphique",
+                    ["Ligne", "Barre", "Scatter", "Histogramme", "Box Plot"]
+                )
                 
-                # Créer la visualisation
-                fig = plot_custom_visualization(df_viz, chart_type, x_col, y_col, color_col)
+                # Colonnes disponibles
+                numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+                all_cols = df.columns.tolist()
                 
-                if fig:
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-                    # Bouton de téléchargement
-                    st.download_button(
-                        label="💾 Télécharger le graphique (HTML)",
-                        data=fig.to_html(),
-                        file_name=f"chart_{chart_type.lower()}_{x_col}.html",
-                        mime="text/html"
-                    )
+                # Sélection des axes
+                x_col = st.selectbox("Axe X", all_cols)
+                
+                if chart_type != "Histogramme":
+                    y_col = st.selectbox("Axe Y", numeric_cols)
                 else:
-                    st.warning("⚠️ Impossible de créer le graphique avec ces paramètres.")
-            else:
-                st.info("👈 Configurez votre graphique et cliquez sur 'Générer'")
+                    y_col = None
+                
+                # Couleur (optionnel)
+                use_color = st.checkbox("Ajouter une dimension de couleur")
+                if use_color:
+                    categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
+                    color_col = st.selectbox("Colonne de couleur", categorical_cols)
+                else:
+                    color_col = None
+                
+                # Filtres
+                st.markdown("---")
+                st.subheader("🔍 Filtres")
+                
+                if 'region' in df.columns:
+                    regions = ['Toutes'] + sorted(df['region'].unique().tolist())
+                    filter_region = st.multiselect("Régions", regions, default=['Toutes'])
+                else:
+                    filter_region = ['Toutes']
+                
+                # Bouton de génération
+                generate_viz = st.button("🎨 Générer le graphique", use_container_width=True)
+            
+            with col2:
+                st.subheader("📊 Résultat")
+                
+                if generate_viz:
+                    # Appliquer les filtres
+                    df_viz = df.copy()
+                    
+                    if 'Toutes' not in filter_region and 'region' in df.columns:
+                        df_viz = df_viz[df_viz['region'].isin(filter_region)]
+                    
+                    # Créer la visualisation
+                    fig = plot_custom_visualization(df_viz, chart_type, x_col, y_col, color_col)
+                    
+                    if fig:
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Bouton de téléchargement
+                        st.download_button(
+                            label="💾 Télécharger le graphique (HTML)",
+                            data=fig.to_html(),
+                            file_name=f"chart_{chart_type.lower()}_{x_col}.html",
+                            mime="text/html"
+                        )
+                    else:
+                        st.warning("⚠️ Impossible de créer le graphique avec ces paramètres.")
+                else:
+                    st.info("👈 Configurez votre graphique et cliquez sur 'Générer'")
 
 # ═══════════════════════════════════════════════════════════════════════
 # PAGE : 🔍 EXPLORATEUR DE DONNÉES
