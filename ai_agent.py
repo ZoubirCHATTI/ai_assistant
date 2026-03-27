@@ -1,420 +1,295 @@
 # ai_agent.py
 
-import pandas as pd
-from langchain_mistralai import ChatMistralAI
-from langchain_core.tools import tool
-from langchain_core.messages import HumanMessage
-from langgraph.graph import StateGraph, END
-from langgraph.prebuilt import ToolNode
-from typing import TypedDict, Annotated, Sequence
-from langchain_core.messages import BaseMessage
-import operator
+}"
+# ai_agent.py
+# -*- coding: utf-8 -*-
+"""
+Agent IA pour l'analyse des données TER avec génération de graphiques
+"""
 
+from mistralai import Mistral
+import pandas as pd
+import json
 from config import Config
 
 
-class AgentState(TypedDict):
-    """État de l'agent"""
-    messages: Annotated[Sequence[BaseMessage], operator.add]
-
-
 class TERAnalysisAgent:
-    """Agent IA pour analyser les données TER avec LangGraph"""
+    """Agent IA pour analyser les données TER et générer des graphiques"""
     
     def __init__(self, df: pd.DataFrame):
-        self.df = df  # Stocker le DataFrame comme attribut de classe
+        """
+        Initialise l'agent avec les données TER
         
-        self.llm = ChatMistralAI(
-            model=Config.MISTRAL_MODEL,
-            mistral_api_key=Config.MISTRAL_API_KEY,
-            temperature=0
-        )
+        Args:
+            df: DataFrame contenant les données TER
+        """
+        if not Config.MISTRAL_API_KEY:
+            raise ValueError("❌ MISTRAL_API_KEY n'est pas configurée")
         
-        # Créer les outils avec accès au DataFrame
-        self.tools = self._create_tools()
+        self.client = Mistral(api_key=Config.MISTRAL_API_KEY)
+        self.model = Config.MISTRAL_MODEL
+        self.df = df
         
-        # Lier les outils au LLM
-        self.llm_with_tools = self.llm.bind_tools(self.tools)
+        # Préparer un résumé des données pour le contexte
+        self.data_context = self._prepare_data_context()
         
-        # Créer le graph
-        self.graph = self._create_graph()
+        print("✅ Agent IA initialisé avec succès")
+        print(f"   Modèle : {self.model}")
+        print(f"   Données : {len(df)} lignes, {len(df.columns)} colonnes")
     
-    def _create_tools(self):
-        """Crée les outils d'analyse disponibles pour l'agent"""
+    def _prepare_data_context(self) -> str:
+        """Prépare un résumé des données pour le contexte de l'IA"""
         
-        # Référence locale EXPLICITE au DataFrame
-        df = self.df
-        
-        # Vérification de sécurité
-        if df is None or len(df) == 0:
-            raise ValueError("❌ Le DataFrame est vide ou None !")
-        
-        print(f"✅ Outils créés avec DataFrame de {len(df)} lignes et {len(df.columns)} colonnes")
-        
-        # ═══════════════════════════════════════════════════════════════
-        # OUTIL DE DEBUG (IMPORTANT)
-        # ═══════════════════════════════════════════════════════════════
-        
-        @tool
-        def debug_dataframe_info() -> str:
-            """Affiche des informations de debug sur le DataFrame."""
-            try:
-                info = f"📊 **Informations sur le DataFrame :**\n\n"
-                info += f"- **Nombre de lignes** : {len(df):,}\n"
-                info += f"- **Nombre de colonnes** : {len(df.columns)}\n"
-                info += f"- **Colonnes** : {', '.join(df.columns.tolist())}\n\n"
-                
-                if 'region' in df.columns:
-                    nb_regions = df['region'].nunique()
-                    regions = df['region'].unique()[:5]
-                    info += f"✅ **Colonne 'region'** : {nb_regions} régions uniques\n"
-                    info += f"   Exemples : {', '.join(str(r) for r in regions)}\n"
-                else:
-                    info += f"❌ **Colonne 'region'** : NON trouvée\n"
-                
-                if 'taux_regularite' in df.columns:
-                    avg = df['taux_regularite'].mean()
-                    mini = df['taux_regularite'].min()
-                    maxi = df['taux_regularite'].max()
-                    info += f"✅ **Colonne 'taux_regularite'** : Moyenne {avg:.2f}% (min: {mini:.2f}%, max: {maxi:.2f}%)\n"
-                else:
-                    info += f"❌ **Colonne 'taux_regularite'** : NON trouvée\n"
-                
-                # Colonnes météo
-                weather_cols = [col for col in df.columns if col in [
-                    'temperature_mean', 'precipitation', 'snow', 'wind_speed', 
-                    'wind_gusts', 'weather_severity_score'
-                ]]
-                
-                if weather_cols:
-                    info += f"\n🌦️ **Colonnes météo** ({len(weather_cols)}) : {', '.join(weather_cols)}\n"
-                else:
-                    info += f"\n❌ **Aucune colonne météo** trouvée\n"
-                
-                return info
-                
-            except Exception as e:
-                return f"❌ Erreur debug : {str(e)}\n{type(e).__name__}"
-        
-        # ═══════════════════════════════════════════════════════════════
-        # OUTILS D'ANALYSE STANDARD
-        # ═══════════════════════════════════════════════════════════════
-        
-        @tool
-        def calculer_regularite_globale() -> str:
-            """Calcule le taux de régularité global sur toutes les données."""
-            try:
-                if 'taux_regularite' not in df.columns:
-                    return "❌ Colonne 'taux_regularite' non trouvée"
-                
-                avg = df['taux_regularite'].mean()
-                median = df['taux_regularite'].median()
-                min_val = df['taux_regularite'].min()
-                max_val = df['taux_regularite'].max()
-                
-                return (f"📊 **Statistiques de régularité globale :**\n\n"
-                       f"- **Moyenne** : {avg:.2f}%\n"
-                       f"- **Médiane** : {median:.2f}%\n"
-                       f"- **Minimum** : {min_val:.2f}%\n"
-                       f"- **Maximum** : {max_val:.2f}%\n"
-                       f"- **Nombre d'enregistrements** : {len(df):,}")
-            except Exception as e:
-                return f"❌ Erreur : {str(e)}"
-        
-        @tool
-        def liste_regions_disponibles() -> str:
-            """Liste toutes les régions présentes dans les données."""
-            try:
-                if 'region' not in df.columns:
-                    return "❌ Colonne 'region' non trouvée"
-                
-                regions = df['region'].dropna().unique()
-                
-                if len(regions) == 0:
-                    return "❌ Aucune région trouvée"
-                
-                regions_sorted = sorted(regions)
-                result = f"🗺️ **{len(regions_sorted)} régions disponibles :**\n\n"
-                
-                for region in regions_sorted:
-                    nb = len(df[df['region'] == region])
-                    
-                    if 'taux_regularite' in df.columns:
-                        avg = df[df['region'] == region]['taux_regularite'].mean()
-                        result += f"- **{region}** : {nb:,} enregistrements | Régularité : {avg:.2f}%\n"
-                    else:
-                        result += f"- **{region}** : {nb:,} enregistrements\n"
-                
-                return result
-            except Exception as e:
-                return f"❌ Erreur : {str(e)}"
-        
-        @tool
-        def top_regions_regulieres(n: int = 5) -> str:
-            """
-            Liste les N régions les plus régulières.
-            
-            Args:
-                n: Nombre de régions (défaut 5)
-            """
-            try:
-                if 'region' not in df.columns or 'taux_regularite' not in df.columns:
-                    return "❌ Colonnes 'region' ou 'taux_regularite' manquantes"
-                
-                df_clean = df[['region', 'taux_regularite']].dropna()
-                
-                if len(df_clean) == 0:
-                    return "❌ Aucune donnée valide"
-                
-                regularite_par_region = df_clean.groupby('region')['taux_regularite'].mean()
-                n_regions = min(n, len(regularite_par_region))
-                top = regularite_par_region.nlargest(n_regions)
-                
-                result = f"🏆 **Top {n_regions} régions les plus régulières :**\n\n"
-                
-                for i, (region, taux) in enumerate(top.items(), 1):
-                    emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
-                    result += f"{emoji} **{region}** : {taux:.2f}%\n"
-                
-                return result
-            except Exception as e:
-                return f"❌ Erreur : {str(e)}"
-        
-        @tool
-        def pires_regions(n: int = 5) -> str:
-            """
-            Liste les N régions avec la pire régularité.
-            
-            Args:
-                n: Nombre de régions (défaut 5)
-            """
-            try:
-                if 'region' not in df.columns or 'taux_regularite' not in df.columns:
-                    return "❌ Colonnes 'region' ou 'taux_regularite' manquantes"
-                
-                df_clean = df[['region', 'taux_regularite']].dropna()
-                
-                if len(df_clean) == 0:
-                    return "❌ Aucune donnée valide"
-                
-                regularite_par_region = df_clean.groupby('region')['taux_regularite'].mean()
-                n_regions = min(n, len(regularite_par_region))
-                bottom = regularite_par_region.nsmallest(n_regions)
-                
-                result = f"⚠️ **Top {n_regions} régions avec la pire régularité :**\n\n"
-                
-                for i, (region, taux) in enumerate(bottom.items(), 1):
-                    result += f"{i}. **{region}** : {taux:.2f}% ⚠️\n"
-                
-                return result
-            except Exception as e:
-                return f"❌ Erreur : {str(e)}"
-        
-        @tool
-        def statistiques_trains() -> str:
-            """Donne des statistiques complètes sur le nombre de trains."""
-            try:
-                stats = []
-                
-                if 'nombre_trains_prevus' in df.columns:
-                    total = df['nombre_trains_prevus'].sum()
-                    stats.append(f"🚂 **Total trains prévus** : {total:,.0f}")
-                
-                if 'nombre_trains_circules' in df.columns:
-                    total = df['nombre_trains_circules'].sum()
-                    stats.append(f"✅ **Total trains circulés** : {total:,.0f}")
-                
-                if 'nombre_trains_supprimes' in df.columns:
-                    total = df['nombre_trains_supprimes'].sum()
-                    stats.append(f"❌ **Total trains supprimés** : {total:,.0f}")
-                
-                if 'nombre_trains_retard' in df.columns:
-                    total = df['nombre_trains_retard'].sum()
-                    stats.append(f"⏰ **Total trains en retard** : {total:,.0f}")
-                
-                return "\n".join(stats) if stats else "❌ Données de trains non disponibles"
-            except Exception as e:
-                return f"❌ Erreur : {str(e)}"
-        
-        # ═══════════════════════════════════════════════════════════════
-        # OUTILS MÉTÉO
-        # ═══════════════════════════════════════════════════════════════
-        
-        @tool
-        def verifier_donnees_meteo() -> str:
-            """Vérifie si les données météo sont disponibles."""
-            try:
-                weather_cols = ['temperature_mean', 'precipitation', 'snow', 'wind_speed', 'weather_severity_score']
-                available = [col for col in weather_cols if col in df.columns]
-                
-                if not available:
-                    return "❌ Aucune donnée météo disponible"
-                
-                result = f"✅ **{len(available)}/{len(weather_cols)} colonnes météo disponibles**\n\n"
-                result += f"**Colonnes** : {', '.join(available)}\n"
-                
-                if 'weather_severity_score' in df.columns:
-                    avg = df['weather_severity_score'].mean()
-                    result += f"\n🌦️ **Score sévérité moyen** : {avg:.1f}/100"
-                
-                return result
-            except Exception as e:
-                return f"❌ Erreur : {str(e)}"
-        
-        @tool
-        def analyser_impact_meteo_global() -> str:
-            """Analyse l'impact global de la météo sur la régularité."""
-            try:
-                if 'weather_severity_score' not in df.columns or 'taux_regularite' not in df.columns:
-                    return "❌ Données météo ou régularité manquantes"
-                
-                df_clean = df.dropna(subset=['weather_severity_score', 'taux_regularite'])
-                
-                if len(df_clean) < 10:
-                    return "❌ Pas assez de données"
-                
-                df_clean['meteo_cat'] = pd.cut(
-                    df_clean['weather_severity_score'],
-                    bins=[-1, 20, 40, 60, 100],
-                    labels=['Bonne', 'Correcte', 'Difficile', 'Extrême']
-                )
-                
-                result = "🌦️ **Impact météo sur la régularité :**\n\n"
-                
-                for cat in ['Bonne', 'Correcte', 'Difficile', 'Extrême']:
-                    data = df_clean[df_clean['meteo_cat'] == cat]
-                    if len(data) > 0:
-                        avg = data['taux_regularite'].mean()
-                        emoji = "☀️" if cat == 'Bonne' else "⛅" if cat == 'Correcte' else "🌧️" if cat == 'Difficile' else "⛈️"
-                        result += f"{emoji} **Météo {cat}** : {avg:.2f}% ({len(data)} jours)\n"
-                
-                return result
-            except Exception as e:
-                return f"❌ Erreur : {str(e)}"
-        
-        @tool
-        def impact_neige_sur_regularite() -> str:
-            """Analyse l'impact de la neige sur la régularité."""
-            try:
-                if 'snow' not in df.columns or 'taux_regularite' not in df.columns:
-                    return "❌ Données de neige non disponibles"
-                
-                df_clean = df.dropna(subset=['snow', 'taux_regularite'])
-                avec_neige = df_clean[df_clean['snow'] > 0]
-                sans_neige = df_clean[df_clean['snow'] == 0]
-                
-                if len(avec_neige) == 0:
-                    return "✅ Aucun épisode neigeux détecté"
-                
-                reg_avec = avec_neige['taux_regularite'].mean()
-                reg_sans = sans_neige['taux_regularite'].mean()
-                diff = reg_sans - reg_avec
-                
-                result = f"❄️ **Impact de la neige :**\n\n"
-                result += f"- Sans neige : {reg_sans:.2f}%\n"
-                result += f"- Avec neige : {reg_avec:.2f}%\n"
-                result += f"- **Perte** : {diff:.2f} points\n"
-                result += f"- Jours avec neige : {len(avec_neige)}"
-                
-                return result
-            except Exception as e:
-                return f"❌ Erreur : {str(e)}"
-        
-        @tool
-        def impact_vent_fort() -> str:
-            """Analyse l'impact des vents forts (>90 km/h)."""
-            try:
-                if 'wind_gusts' not in df.columns or 'taux_regularite' not in df.columns:
-                    return "❌ Données de vent non disponibles"
-                
-                df_clean = df.dropna(subset=['wind_gusts', 'taux_regularite'])
-                vent_fort = df_clean[df_clean['wind_gusts'] > 90]
-                vent_normal = df_clean[df_clean['wind_gusts'] <= 90]
-                
-                if len(vent_fort) == 0:
-                    return "✅ Aucun vent fort (>90 km/h) détecté"
-                
-                reg_fort = vent_fort['taux_regularite'].mean()
-                reg_normal = vent_normal['taux_regularite'].mean()
-                diff = reg_normal - reg_fort
-                
-                result = f"💨 **Impact du vent fort :**\n\n"
-                result += f"- Vent normal : {reg_normal:.2f}%\n"
-                result += f"- Vent fort : {reg_fort:.2f}%\n"
-                result += f"- **Perte** : {diff:.2f} points\n"
-                result += f"- Jours avec vent fort : {len(vent_fort)}"
-                
-                return result
-            except Exception as e:
-                return f"❌ Erreur : {str(e)}"
-        
-        # ═══════════════════════════════════════════════════════════════
-        # RETOUR DE TOUS LES OUTILS
-        # ═══════════════════════════════════════════════════════════════
-        
-        return [
-            debug_dataframe_info,
-            calculer_regularite_globale,
-            liste_regions_disponibles,
-            top_regions_regulieres,
-            pires_regions,
-            statistiques_trains,
-            verifier_donnees_meteo,
-            analyser_impact_meteo_global,
-            impact_neige_sur_regularite,
-            impact_vent_fort
+        context_parts = [
+            f"Dataset TER : {len(self.df)} enregistrements",
+            f"Colonnes disponibles : {', '.join(self.df.columns.tolist())}",
         ]
+        
+        # Ajouter des statistiques de base
+        if 'taux_regularite' in self.df.columns:
+            avg_reg = self.df['taux_regularite'].mean()
+            context_parts.append(f"Taux de régularité moyen : {avg_reg:.2f}%")
+        
+        if 'region' in self.df.columns:
+            regions = self.df['region'].unique()
+            context_parts.append(f"Régions : {', '.join(regions[:10])}" + 
+                               (" ..." if len(regions) > 10 else ""))
+        
+        if 'date' in self.df.columns:
+            date_min = self.df['date'].min()
+            date_max = self.df['date'].max()
+            context_parts.append(f"Période : du {date_min} au {date_max}")
+        
+        return "\n".join(context_parts)
     
-    def _create_graph(self):
-        """Crée le graph LangGraph"""
+    def _analyze_data(self, question: str) -> dict:
+        """
+        Analyse les données selon la question
         
-        workflow = StateGraph(AgentState)
+        Returns:
+            dict avec 'data' (résultats) et 'summary' (texte)
+        """
         
-        def call_model(state: AgentState):
-            messages = state["messages"]
-            response = self.llm_with_tools.invoke(messages)
-            return {"messages": [response]}
+        # Créer différents types d'analyses selon la question
+        question_lower = question.lower()
         
-        tool_node = ToolNode(self.tools)
+        result = {
+            'data': None,
+            'summary': '',
+            'chart_type': None,
+            'chart_data': None
+        }
         
-        def should_continue(state: AgentState):
-            messages = state["messages"]
-            last_message = messages[-1]
-            
-            if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
-                return "tools"
-            return END
-        
-        workflow.add_node("agent", call_model)
-        workflow.add_node("tools", tool_node)
-        
-        workflow.set_entry_point("agent")
-        workflow.add_conditional_edges(
-            "agent",
-            should_continue,
-            {
-                "tools": "tools",
-                END: END
-            }
-        )
-        workflow.add_edge("tools", "agent")
-        
-        return workflow.compile()
-    
-    def ask(self, question: str) -> str:
-        """Pose une question à l'agent"""
         try:
-            initial_state = {
-                "messages": [HumanMessage(content=question)]
-            }
+            # Régularité moyenne globale
+            if any(word in question_lower for word in ['moyenne', 'globale', 'général']):
+                if 'taux_regularite' in self.df.columns:
+                    avg = self.df['taux_regularite'].mean()
+                    result['summary'] = f"La régularité moyenne est de {avg:.2f}%"
+                    result['data'] = {'moyenne': avg}
             
-            result = self.graph.invoke(initial_state)
-            final_message = result["messages"][-1]
+            # Régularité par région
+            elif any(word in question_lower for word in ['région', 'regions', 'compare']):
+                if 'region' in self.df.columns and 'taux_regularite' in self.df.columns:
+                    by_region = self.df.groupby('region')['taux_regularite'].mean().sort_values(ascending=False)
+                    
+                    result['chart_type'] = 'bar'
+                    result['chart_data'] = {
+                        'x': by_region.index.tolist(),
+                        'y': by_region.values.tolist(),
+                        'title': 'Régularité moyenne par région',
+                        'xlabel': 'Région',
+                        'ylabel': 'Taux de régularité (%)'
+                    }
+                    
+                    top3 = by_region.head(3)
+                    result['summary'] = "Top 3 des régions :\n" + "\n".join(
+                        [f"{i+1}. {region}: {taux:.2f}%" 
+                         for i, (region, taux) in enumerate(top3.items())]
+                    )
+                    result['data'] = by_region.to_dict()
             
-            if hasattr(final_message, 'content'):
-                return final_message.content
-            else:
-                return str(final_message)
+            # Top / meilleures régions
+            elif any(word in question_lower for word in ['meilleur', 'top', 'première']):
+                if 'region' in self.df.columns and 'taux_regularite' in self.df.columns:
+                    n = 5  # Par défaut
+                    if 'top 10' in question_lower or '10' in question_lower:
+                        n = 10
+                    elif 'top 3' in question_lower or '3' in question_lower:
+                        n = 3
+                    
+                    top_regions = self.df.groupby('region')['taux_regularite'].mean().nlargest(n)
+                    
+                    result['chart_type'] = 'bar'
+                    result['chart_data'] = {
+                        'x': top_regions.index.tolist(),
+                        'y': top_regions.values.tolist(),
+                        'title': f'Top {n} des régions les plus ponctuelles',
+                        'xlabel': 'Région',
+                        'ylabel': 'Taux de régularité (%)',
+                        'color': 'green'
+                    }
+                    
+                    result['summary'] = f"Top {n} des régions les plus ponctuelles :\n" + "\n".join(
+                        [f"{i+1}. {region}: {taux:.2f}%" 
+                         for i, (region, taux) in enumerate(top_regions.items())]
+                    )
+                    result['data'] = top_regions.to_dict()
             
+            # Pires régions
+            elif any(word in question_lower for word in ['pire', 'mauvais', 'dernière', 'worst']):
+                if 'region' in self.df.columns and 'taux_regularite' in self.df.columns:
+                    n = 5
+                    if '10' in question_lower:
+                        n = 10
+                    elif '3' in question_lower:
+                        n = 3
+                    
+                    worst_regions = self.df.groupby('region')['taux_regularite'].mean().nsmallest(n)
+                    
+                    result['chart_type'] = 'bar'
+                    result['chart_data'] = {
+                        'x': worst_regions.index.tolist(),
+                        'y': worst_regions.values.tolist(),
+                        'title': f'Top {n} des régions les moins ponctuelles',
+                        'xlabel': 'Région',
+                        'ylabel': 'Taux de régularité (%)',
+                        'color': 'red'
+                    }
+                    
+                    result['summary'] = f"Top {n} des régions les moins ponctuelles :\n" + "\n".join(
+                        [f"{i+1}. {region}: {taux:.2f}%" 
+                         for i, (region, taux) in enumerate(worst_regions.items())]
+                    )
+                    result['data'] = worst_regions.to_dict()
+            
+            # Évolution temporelle
+            elif any(word in question_lower for word in ['évolution', 'evolution', 'temps', 'tendance']):
+                if 'date' in self.df.columns and 'taux_regularite' in self.df.columns:
+                    by_date = self.df.groupby('date')['taux_regularite'].mean().sort_index()
+                    
+                    result['chart_type'] = 'line'
+                    result['chart_data'] = {
+                        'x': [str(d) for d in by_date.index.tolist()],
+                        'y': by_date.values.tolist(),
+                        'title': 'Évolution de la régularité dans le temps',
+                        'xlabel': 'Date',
+                        'ylabel': 'Taux de régularité (%)'
+                    }
+                    
+                    trend = "hausse" if by_date.iloc[-1] > by_date.iloc[0] else "baisse"
+                    result['summary'] = f"Évolution : tendance à la {trend}\n"
+                    result['summary'] += f"Début : {by_date.iloc[0]:.2f}%\n"
+                    result['summary'] += f"Fin : {by_date.iloc[-1]:.2f}%"
+                    result['data'] = by_date.to_dict()
+            
+            # Impact météo (si colonnes disponibles)
+            elif any(word in question_lower for word in ['météo', 'meteo', 'neige', 'pluie', 'vent']):
+                weather_cols = [col for col in self.df.columns if any(
+                    w in col.lower() for w in ['neige', 'pluie', 'vent', 'temp']
+                )]
+                
+                if weather_cols and 'taux_regularite' in self.df.columns:
+                    # Analyser l'impact de la première colonne météo trouvée
+                    weather_col = weather_cols[0]
+                    
+                    # Créer des catégories
+                    if 'neige' in weather_col.lower() or 'pluie' in weather_col.lower():
+                        self.df['meteo_category'] = pd.cut(
+                            self.df[weather_col], 
+                            bins=[0, 0.1, 5, 100], 
+                            labels=['Pas de précipitations', 'Légères', 'Fortes']
+                        )
+                    else:
+                        self.df['meteo_category'] = pd.cut(
+                            self.df[weather_col], 
+                            bins=3, 
+                            labels=['Faible', 'Moyen', 'Fort']
+                        )
+                    
+                    by_weather = self.df.groupby('meteo_category')['taux_regularite'].mean()
+                    
+                    result['chart_type'] = 'bar'
+                    result['chart_data'] = {
+                        'x': [str(x) for x in by_weather.index.tolist()],
+                        'y': by_weather.values.tolist(),
+                        'title': f'Impact de {weather_col} sur la régularité',
+                        'xlabel': weather_col,
+                        'ylabel': 'Taux de régularité (%)'
+                    }
+                    
+                    result['summary'] = f"Impact de {weather_col} :\n" + "\n".join(
+                        [f"- {cat}: {taux:.2f}%" 
+                         for cat, taux in by_weather.items()]
+                    )
+                    result['data'] = by_weather.to_dict()
+        
         except Exception as e:
-            return f"❌ Erreur : {str(e)}"
+            print(f"⚠️ Erreur lors de l'analyse : {e}")
+            result['summary'] = "Je n'ai pas pu analyser cette dimension des données."
+        
+        return result
+    
+    def ask(self, question: str) -> dict:
+        """
+        Pose une question à l'agent
+        
+        Args:
+            question: Question en langage naturel
+            
+        Returns:
+            dict avec 'text' (réponse), 'chart_type', 'chart_data'
+        """
+        
+        print(f"\n🤔 Question : {question}")
+        
+        # Analyser les données
+        analysis = self._analyze_data(question)
+        
+        # Construire le prompt pour l'IA
+        system_prompt = f"""Tu es un assistant spécialisé dans l'analyse des données de régularité des trains TER en France.
+
+CONTEXTE DES DONNÉES :
+{self.data_context}
+
+ANALYSE EFFECTUÉE :
+{analysis['summary'] if analysis['summary'] else 'Aucune analyse spécifique'}
+
+Réponds à la question de l'utilisateur de manière claire et concise en français.
+Si des données chiffrées sont disponibles, cite-les.
+Sois précis et factuel."""
+        
+        try:
+            # Appeler l'API Mistral
+            response = self.client.chat.complete(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": question}
+                ],
+                temperature=0.3,
+                max_tokens=500
+            )
+            
+            answer_text = response.choices[0].message.content
+            
+            print(f"✅ Réponse générée")
+            
+            return {
+                'text': answer_text,
+                'chart_type': analysis.get('chart_type'),
+                'chart_data': analysis.get('chart_data')
+            }
+        
+        except Exception as e:
+            print(f"❌ Erreur API Mistral : {e}")
+            
+            # Réponse de secours avec les données analysées
+            if analysis['summary']:
+                return {
+                    'text': analysis['summary'],
+                    'chart_type': analysis.get('chart_type'),
+                    'chart_data': analysis.get('chart_data')
+                }
+            else:
+                raise e
