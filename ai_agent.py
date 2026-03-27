@@ -4,7 +4,7 @@
 Agent IA conversationnel pour l'analyse des données TER
 """
 
-from mistralai import Mistral
+from langchain_mistralai import Mistral
 import pandas as pd
 from typing import Tuple, Optional
 from config import Config
