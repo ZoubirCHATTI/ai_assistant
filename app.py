@@ -300,21 +300,21 @@ st.markdown("""
         #padding: 1rem 0;
     }
     .sub-header {
-        font-size: 1.2rem;
+        #font-size: 1.2rem;
         color: #666;
         text-align: center;
-        margin-bottom: 2rem;
+        #margin-bottom: 2rem;
     }
     .stMetric {
         background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
+        #padding: 1rem;
+        #border-radius: 0.5rem;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     .chat-message {
         padding: 1rem;
-        border-radius: 0.5rem;
-        margin: 0.5rem 0;
+        #border-radius: 0.5rem;
+        #margin: 0.5rem 0;
     }
     .user-message {
         background-color: #e3f2fd;
