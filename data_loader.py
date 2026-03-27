@@ -98,3 +98,144 @@ def get_data_summary(df):
         summary['regions'] = df['region'].unique().tolist()
 
     return summary
+# Dans data_loader.py
+
+class TERDataLoader:
+    """Classe pour charger et préparer les données TER"""
+    
+    # ... (garde tes méthodes existantes)
+    
+    def calculate_regularite(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Calcule le taux de régularité à partir des colonnes disponibles
+        
+        Args:
+            df: DataFrame TER
+            
+        Returns:
+            DataFrame avec la colonne taux_regularite ajoutée
+        """
+        df = df.copy()
+        
+        # Méthode 1 : Si on a "nombre_trains_a_l_heure"
+        if 'nombre_trains_a_l_heure' in df.columns and 'nombre_trains_circules' in df.columns:
+            df['taux_regularite'] = (
+                df['nombre_trains_a_l_heure'] / df['nombre_trains_circules'] * 100
+            ).fillna(0)
+            print("✅ Taux de régularité calculé à partir de 'nombre_trains_a_l_heure'")
+        
+        # Méthode 2 : Si on a "nombre_trains_retard"
+        elif 'nombre_trains_retard' in df.columns and 'nombre_trains_circules' in df.columns:
+            df['taux_regularite'] = (
+                100 - (df['nombre_trains_retard'] / df['nombre_trains_circules'] * 100)
+            ).fillna(0)
+            print("✅ Taux de régularité calculé à partir de 'nombre_trains_retard'")
+        
+        # Méthode 3 : Si on a un pourcentage de régularité direct
+        elif 'regularite' in df.columns:
+            df['taux_regularite'] = df['regularite']
+            print("✅ Colonne 'regularite' renommée en 'taux_regularite'")
+        
+        # Méthode 4 : Chercher une colonne contenant "regularite" ou "ponctualite"
+        else:
+            regularite_cols = [col for col in df.columns if 'regularite' in col.lower() or 'ponctualite' in col.lower()]
+            
+            if regularite_cols:
+                df['taux_regularite'] = df[regularite_cols[0]]
+                print(f"✅ Colonne '{regularite_cols[0]}' utilisée comme taux_regularite")
+            else:
+                print("⚠️ Impossible de calculer le taux de régularité. Colonnes disponibles :")
+                print(df.columns.tolist())
+                # Valeur par défaut
+                df['taux_regularite'] = 0
+        
+        # S'assurer que les valeurs sont entre 0 et 100
+        df['taux_regularite'] = df['taux_regularite'].clip(0, 100)
+        
+        return df
+    
+    def load_data(self) -> pd.DataFrame:
+        """
+        Charge les données TER depuis l'API
+        
+        Returns:
+            DataFrame avec les données TER et le taux de régularité calculé
+        """
+        url = "https://ressources.data.sncf.com/api/explore/v2.1/catalog/datasets/regularite-mensuelle-ter/records"
+        
+        params = {
+            'limit': 100,
+            'offset': 0
+        }
+        
+        all_records = []
+        
+        print("📥 Téléchargement des données TER...")
+        
+        while True:
+            try:
+                response = requests.get(url, params=params, timeout=30)
+                response.raise_for_status()
+                
+                data = response.json()
+                records = data.get('results', [])
+                
+                if not records:
+                    break
+                
+                all_records.extend(records)
+                print(f"  → {len(all_records)} enregistrements téléchargés...")
+                
+                if len(records) < params['limit']:
+                    break
+                
+                params['offset'] += params['limit']
+                
+            except requests.exceptions.RequestException as e:
+                print(f"❌ Erreur lors du téléchargement : {e}")
+                break
+        
+        if not all_records:
+            raise ValueError("❌ Aucune donnée téléchargée")
+        
+        # Créer le DataFrame
+        df = pd.DataFrame(all_records)
+        
+        print(f"✅ {len(df)} enregistrements chargés")
+        print(f"📊 Colonnes disponibles : {', '.join(df.columns.tolist()[:10])}...")
+        
+        # Nettoyage de base
+        df = self._clean_data(df)
+        
+        # NOUVEAU : Calculer le taux de régularité
+        df = self.calculate_regularite(df)
+        
+        return df
+    
+    def _clean_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Nettoie et prépare les données"""
+        df = df.copy()
+        
+        # Convertir les dates
+        date_columns = ['date', 'mois', 'annee']
+        for col in date_columns:
+            if col in df.columns:
+                if col == 'date':
+                    df[col] = pd.to_datetime(df[col], errors='coerce')
+        
+        # Convertir les colonnes numériques
+        numeric_columns = [
+            'nombre_trains_prevus', 'nombre_trains_circules',
+            'nombre_trains_supprimes', 'nombre_trains_retard',
+            'nombre_trains_a_l_heure'
+        ]
+        
+        for col in numeric_columns:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        # Supprimer les lignes avec dates invalides
+        if 'date' in df.columns:
+            df = df.dropna(subset=['date'])
+        
+        return df    
