@@ -437,12 +437,12 @@ if page == "🏠 Accueil":
     
     with col3:
         if summary['regions']:
-            st.warning(f"""
-            ### 🗺️ Couverture
-            - **{len(summary['regions'])}** régions
-            - Analyse nationale
-            - Données temps réel
-            """)
+            st.warning(
+            f"### 🗺️ Couverture"
+            f"- **{len(summary['regions'])}** régions"
+            f"- Analyse nationale"
+            f"- Données temps réel"
+            )
         else:
             st.warning("### 🗺️ Couverture\nAnalyse disponible")
     
