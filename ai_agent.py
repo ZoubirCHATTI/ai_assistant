@@ -1,137 +1,161 @@
-# ai_agent.py
 # -*- coding: utf-8 -*-
 """
-Agent IA conversationnel pour l'analyse des données TER
+Agent IA pour l'analyse conversationnelle des données TER
 """
 
-from langchain_mistralai import Mistral
+import streamlit as st
 import pandas as pd
-from typing import Tuple, Optional
+from langchain_mistralai import ChatMistralAI
+from langchain_core.tools import tool
+from langchain.agents import AgentExecutor, create_tool_calling_agent
+from langchain_core.prompts import ChatPromptTemplate
 from config import Config
-
 
 class TERAnalysisAgent:
     """Agent IA pour analyser les données TER"""
     
     def __init__(self, df: pd.DataFrame):
-        """
-        Initialise l'agent avec les données TER
-        
-        Args:
-            df: DataFrame contenant les données TER
-        """
         self.df = df
-        self.client = Mistral(api_key=Config.MISTRAL_API_KEY)
-        self.model = Config.MISTRAL_MODEL
-        self.conversation_history = []
-        
-        # Préparer le contexte des données
-        self.data_context = self._prepare_data_context()
-        
-        print("✅ Agent IA initialisé avec succès")
+        self.llm = ChatMistralAI(
+            model=Config.MISTRAL_MODEL,
+            mistral_api_key=Config.MISTRAL_API_KEY,
+            temperature=0
+        )
+        self.agent_executor = self._create_agent()
     
-    def _prepare_data_context(self) -> str:
-        """Prépare un résumé du contexte des données"""
+    def _create_tools(self):
+        """Crée les outils d'analyse disponibles pour l'agent"""
         
-        context_parts = [
-            f"📊 Dataset TER : {len(self.df):,} enregistrements",
-            f"📋 Colonnes : {', '.join(self.df.columns.tolist())}"
+        df = self.df  # Référence locale pour les closures
+        
+        @tool
+        def calculer_regularite_globale() -> str:
+            """Calcule le taux de régularité global sur toutes les données."""
+            if 'taux_regularite' in df.columns:
+                avg = df['taux_regularite'].mean()
+                return f"Le taux de régularité moyen global est de {avg:.2f}%"
+            return "Colonne 'taux_regularite' non trouvée"
+        
+        @tool
+        def regularite_par_region(region: str) -> str:
+            """Calcule le taux de régularité pour une région spécifique."""
+            if 'region' not in df.columns or 'taux_regularite' not in df.columns:
+                return "Colonnes nécessaires non trouvées"
+            
+            df_region = df[df['region'].str.contains(region, case=False, na=False)]
+            if df_region.empty:
+                return f"Aucune donnée trouvée pour la région '{region}'"
+            
+            avg = df_region['taux_regularite'].mean()
+            nb_records = len(df_region)
+            return f"Région '{region}' : régularité moyenne de {avg:.2f}% sur {nb_records} enregistrements"
+        
+        @tool
+        def top_regions_regulieres(n: int = 5) -> str:
+            """Liste les N régions les plus régulières."""
+            if 'region' not in df.columns or 'taux_regularite' not in df.columns:
+                return "Colonnes nécessaires non trouvées"
+            
+            top = df.groupby('region')['taux_regularite'].mean().nlargest(n)
+            result = f"Top {n} régions les plus régulières :\n"
+            for i, (region, taux) in enumerate(top.items(), 1):
+                result += f"{i}. {region} : {taux:.2f}%\n"
+            return result
+        
+        @tool
+        def pires_regions() -> str:
+            """Liste les 5 régions avec la pire régularité."""
+            if 'region' not in df.columns or 'taux_regularite' not in df.columns:
+                return "Colonnes nécessaires non trouvées"
+            
+            bottom = df.groupby('region')['taux_regularite'].mean().nsmallest(5)
+            result = "5 régions avec la pire régularité :\n"
+            for i, (region, taux) in enumerate(bottom.items(), 1):
+                result += f"{i}. {region} : {taux:.2f}%\n"
+            return result
+        
+        @tool
+        def statistiques_trains() -> str:
+            """Donne des statistiques sur le nombre de trains."""
+            stats = []
+            
+            if 'nombre_trains_prevus' in df.columns:
+                total_prevus = df['nombre_trains_prevus'].sum()
+                stats.append(f"Total trains prévus : {total_prevus:,.0f}")
+            
+            if 'nombre_trains_circules' in df.columns:
+                total_circules = df['nombre_trains_circules'].sum()
+                stats.append(f"Total trains circulés : {total_circules:,.0f}")
+            
+            if 'nombre_trains_supprimes' in df.columns:
+                total_supprimes = df['nombre_trains_supprimes'].sum()
+                stats.append(f"Total trains supprimés : {total_supprimes:,.0f}")
+            
+            if 'nombre_trains_retard' in df.columns:
+                total_retards = df['nombre_trains_retard'].sum()
+                stats.append(f"Total trains en retard : {total_retards:,.0f}")
+            
+            return "\n".join(stats) if stats else "Données de trains non disponibles"
+        
+        @tool
+        def evolution_temporelle() -> str:
+            """Analyse l'évolution de la régularité dans le temps."""
+            if 'date' not in df.columns or 'taux_regularite' not in df.columns:
+                return "Données temporelles non disponibles"
+            
+            # Premier et dernier mois
+            df_sorted = df.sort_values('date')
+            first_month = df_sorted.iloc[0]['taux_regularite']
+            last_month = df_sorted.iloc[-1]['taux_regularite']
+            evolution = last_month - first_month
+            
+            trend = "améliorée" if evolution > 0 else "dégradée"
+            
+            return (f"Évolution de la régularité :\n"
+                   f"- Premier enregistrement : {first_month:.2f}%\n"
+                   f"- Dernier enregistrement : {last_month:.2f}%\n"
+                   f"- Tendance : {trend} ({evolution:+.2f} points)")
+        
+        return [
+            calculer_regularite_globale,
+            regularite_par_region,
+            top_regions_regulieres,
+            pires_regions,
+            statistiques_trains,
+            evolution_temporelle
         ]
-        
-        # Ajouter des statistiques
-        if 'taux_regularite' in self.df.columns:
-            avg_reg = self.df['taux_regularite'].mean()
-            context_parts.append(f"📈 Régularité moyenne : {avg_reg:.2f}%")
-        
-        if 'region' in self.df.columns:
-            nb_regions = self.df['region'].nunique()
-            context_parts.append(f"🗺️ Nombre de régions : {nb_regions}")
-        
-        return "\n".join(context_parts)
     
-    def _create_system_prompt(self) -> str:
-        """Crée le prompt système pour l'agent"""
+    def _create_agent(self):
+        """Crée l'agent conversationnel"""
         
-        return f"""Tu es un assistant IA expert en analyse de données ferroviaires TER en France.
-
-**Contexte des données disponibles :**
-{self.data_context}
-
-**Tes capacités :**
-- Analyser les données et répondre à des questions
-- Calculer des statistiques
-- Faire des comparaisons entre régions
-- Analyser les tendances temporelles
-
-**Instructions :**
-- Réponds en français de manière claire et concise
-- Utilise des émojis pour rendre la réponse agréable
-- Fournis des chiffres précis quand c'est possible
-- Si tu ne peux pas répondre, dis-le clairement
-
-**Colonnes disponibles :**
-{', '.join(self.df.columns.tolist())}
-
-Réponds de façon professionnelle et précise !"""
+        tools = self._create_tools()
+        
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", """Tu es un assistant expert en analyse ferroviaire pour la SNCF. 
+            Tu aides les data analysts à comprendre les données de ponctualité des TER.
+            
+            Utilise les outils disponibles pour répondre précisément aux questions.
+            Réponds toujours en français de manière claire et structurée.
+            Si une question nécessite plusieurs outils, utilise-les tous.
+            Fournis des chiffres précis et des insights actionnables."""),
+            ("human", "{input}"),
+            ("placeholder", "{agent_scratchpad}"),
+        ])
+        
+        agent = create_tool_calling_agent(self.llm, tools, prompt)
+        
+        return AgentExecutor(
+            agent=agent,
+            tools=tools,
+            verbose=True,
+            handle_parsing_errors=True,
+            max_iterations=5
+        )
     
     def ask(self, question: str) -> str:
-        """
-        Pose une question à l'agent
-        
-        Args:
-            question: Question de l'utilisateur
-            
-        Returns:
-            Réponse de l'agent
-        """
-        print(f"\n🤔 Question reçue : {question}")
-        
-        # Ajouter la question à l'historique
-        self.conversation_history.append({
-            "role": "user",
-            "content": question
-        })
-        
-        # Créer les messages pour l'API
-        messages = [
-            {
-                "role": "system",
-                "content": self._create_system_prompt()
-            }
-        ] + self.conversation_history
-        
+        """Pose une question à l'agent"""
         try:
-            # Appeler l'API Mistral
-            response = self.client.chat.complete(
-                model=self.model,
-                messages=messages,
-                temperature=0.3,
-                max_tokens=1000
-            )
-            
-            # Extraire la réponse
-            assistant_response = response.choices[0].message.content
-            
-            # Ajouter la réponse à l'historique
-            self.conversation_history.append({
-                "role": "assistant",
-                "content": assistant_response
-            })
-            
-            print(f"✅ Réponse générée")
-            
-            return assistant_response
-        
+            response = self.agent_executor.invoke({"input": question})
+            return response.get("output", "Désolé, je n'ai pas pu générer de réponse.")
         except Exception as e:
-            error_msg = f"❌ Erreur lors de l'appel à l'API : {str(e)}"
-            print(error_msg)
-            return error_msg
-    
-    def reset_conversation(self):
-        """Réinitialise l'historique de conversation"""
-        self.conversation_history = []
-        print("🔄 Historique de conversation réinitialisé")
-    
-    def get_conversation_length(self) -> int:
-        """Retourne le nombre de messages dans l'historique"""
-        return len(self.conversation_history)
+            return f"❌ Erreur : {str(e)}"
