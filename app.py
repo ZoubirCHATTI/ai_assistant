@@ -127,28 +127,46 @@ with st.sidebar:
 # ═══════════════════════════════════════════════════════════════════════
 # CHARGEMENT DES DONNÉES
 # ═══════════════════════════════════════════════════════════════════════
+# Au début de app.py, après les imports
 
-if not st.session_state.data_loaded:
-    with st.spinner("🚂 Chargement des données TER depuis Azure..."):
-        df = load_data_from_azure()
+# ═══════════════════════════════════════════════════════════════════════
+# CHARGEMENT DES DONNÉES
+# ═══════════════════════════════════════════════════════════════════════
+
+@st.cache_data(ttl=3600)
+def load_ter_data():
+    """Charge les données TER avec cache"""
+    try:
+        loader = TERDataLoader()
+        df = loader.load_data()  # Cette méthode calcule maintenant automatiquement le taux_regularite
         
-        if df is not None:
-            st.session_state.df = df
-            st.session_state.data_loaded = True
-            
-            # Initialiser l'agent IA
-            try:
-                st.session_state.agent = TERAnalysisAgent(df)
-            except Exception as e:
-                st.warning(f"⚠️ Agent IA non disponible : {e}")
-                st.session_state.agent = None
-            
-            st.success("✅ Données chargées avec succès !")
-        else:
-            st.error("❌ Impossible de charger les données. Vérifiez votre configuration Azure.")
-            st.stop()
+        # Afficher les infos dans la console
+        print(f"✅ Données chargées : {len(df)} lignes")
+        if 'taux_regularite' in df.columns:
+            avg_reg = df['taux_regularite'].mean()
+            print(f"📊 Taux de régularité moyen : {avg_reg:.2f}%")
+        
+        return df
+    except Exception as e:
+        st.error(f"❌ Erreur lors du chargement des données : {e}")
+        return None
 
-df = st.session_state.df
+# Charger les données
+with st.spinner("⏳ Chargement des données TER..."):
+    df = load_ter_data()
+
+if df is None or len(df) == 0:
+    st.error("❌ Impossible de charger les données TER")
+    st.stop()
+
+st.success(f"✅ {len(df):,} enregistrements chargés")
+
+# Afficher les infos sur le taux de régularité
+if 'taux_regularite' in df.columns:
+    avg_reg = df['taux_regularite'].mean()
+    st.info(f"📊 Taux de régularité moyen calculé : **{avg_reg:.2f}%**")
+else:
+    st.warning("⚠️ Le taux de régularité n'a pas pu être calculé")
 
 # ═══════════════════════════════════════════════════════════════════════
 # PAGE : 🏠 ACCUEIL
