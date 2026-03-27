@@ -5,10 +5,14 @@ seaborn>=0.12.0
 plotly>=5.18.0
 azure-storage-blob>=12.19.0
 openpyxl>=3.1.0
+
+# LangChain + LangGraph (nouvelle architecture)
 langchain>=0.1.0
-langchain-core
-langchain-mistralai
-langchain-experimental
+langchain-core>=0.1.0
+langchain-mistralai>=0.0.5
+langgraph>=0.0.40
+
+# Utilitaires
 python-dotenv
 numpy
 scipy
