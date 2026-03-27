@@ -297,7 +297,7 @@ st.markdown("""
         font-weight: bold;
         color: #1f77b4;
         text-align: center;
-        padding: 1rem 0;
+        #padding: 1rem 0;
     }
     .sub-header {
         font-size: 1.2rem;
