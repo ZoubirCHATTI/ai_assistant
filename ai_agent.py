@@ -9,6 +9,7 @@ from langgraph.prebuilt import ToolNode
 from typing import TypedDict, Annotated, Sequence
 from langchain_core.messages import BaseMessage
 import operator
+import re
 
 from config import Config
 
@@ -23,6 +24,11 @@ class TERAnalysisAgent:
     
     def __init__(self, df: pd.DataFrame):
         self.df = df  # Stocker le DataFrame comme attribut de classe
+        
+        # Convertir la colonne date en datetime si nécessaire
+        if 'date' in self.df.columns:
+            if not pd.api.types.is_datetime64_any_dtype(self.df['date']):
+                self.df['date'] = pd.to_datetime(self.df['date'], errors='coerce')
         
         self.llm = ChatMistralAI(
             model=Config.MISTRAL_MODEL,
@@ -52,7 +58,7 @@ class TERAnalysisAgent:
         print(f"✅ Outils créés avec DataFrame de {len(df)} lignes et {len(df.columns)} colonnes")
         
         # ═══════════════════════════════════════════════════════════════
-        # OUTIL DE DEBUG (IMPORTANT)
+        # OUTILS DE DEBUG
         # ═══════════════════════════════════════════════════════════════
         
         @tool
@@ -69,35 +75,268 @@ class TERAnalysisAgent:
                     regions = df['region'].unique()[:5]
                     info += f"✅ **Colonne 'region'** : {nb_regions} régions uniques\n"
                     info += f"   Exemples : {', '.join(str(r) for r in regions)}\n"
-                else:
-                    info += f"❌ **Colonne 'region'** : NON trouvée\n"
+                
+                if 'date' in df.columns:
+                    date_min = df['date'].min()
+                    date_max = df['date'].max()
+                    info += f"✅ **Colonne 'date'** : du {date_min} au {date_max}\n"
                 
                 if 'taux_regularite' in df.columns:
                     avg = df['taux_regularite'].mean()
-                    mini = df['taux_regularite'].min()
-                    maxi = df['taux_regularite'].max()
-                    info += f"✅ **Colonne 'taux_regularite'** : Moyenne {avg:.2f}% (min: {mini:.2f}%, max: {maxi:.2f}%)\n"
-                else:
-                    info += f"❌ **Colonne 'taux_regularite'** : NON trouvée\n"
-                
-                # Colonnes météo
-                weather_cols = [col for col in df.columns if col in [
-                    'temperature_mean', 'precipitation', 'snow', 'wind_speed', 
-                    'wind_gusts', 'weather_severity_score'
-                ]]
-                
-                if weather_cols:
-                    info += f"\n🌦️ **Colonnes météo** ({len(weather_cols)}) : {', '.join(weather_cols)}\n"
-                else:
-                    info += f"\n❌ **Aucune colonne météo** trouvée\n"
+                    info += f"✅ **Colonne 'taux_regularite'** : Moyenne {avg:.2f}%\n"
                 
                 return info
                 
             except Exception as e:
-                return f"❌ Erreur debug : {str(e)}\n{type(e).__name__}"
+                return f"❌ Erreur debug : {str(e)}"
         
         # ═══════════════════════════════════════════════════════════════
-        # OUTILS D'ANALYSE STANDARD
+        # NOUVEAUX OUTILS DE FILTRAGE
+        # ═══════════════════════════════════════════════════════════════
+        
+        @tool
+        def filtrer_par_mois_annee_region(mois: int, annee: int, region: str = None) -> str:
+            """
+            Filtre les données par mois, année et optionnellement par région.
+            Retourne des statistiques complètes.
+            
+            Args:
+                mois: Numéro du mois (1-12)
+                annee: Année (ex: 2020)
+                region: Nom de la région (optionnel, ex: "Bretagne")
+            """
+            try:
+                if 'date' not in df.columns:
+                    return "❌ Colonne 'date' non trouvée"
+                
+                # Filtrer par date
+                df_filtered = df.copy()
+                df_filtered = df_filtered[
+                    (df_filtered['date'].dt.year == annee) & 
+                    (df_filtered['date'].dt.month == mois)
+                ]
+                
+                if len(df_filtered) == 0:
+                    return f"❌ Aucune donnée pour {mois}/{annee}"
+                
+                # Filtrer par région si spécifiée
+                if region and 'region' in df.columns:
+                    # Recherche insensible à la casse
+                    df_filtered = df_filtered[df_filtered['region'].str.lower() == region.lower()]
+                    
+                    if len(df_filtered) == 0:
+                        return f"❌ Aucune donnée pour {region} en {mois}/{annee}"
+                
+                # Construire le résultat
+                mois_noms = ['', 'janvier', 'février', 'mars', 'avril', 'mai', 'juin', 
+                            'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
+                
+                result = f"📅 **{mois_noms[mois].capitalize()} {annee}"
+                if region:
+                    result += f" - {region}"
+                result += "** :\n\n"
+                
+                result += f"- **Enregistrements** : {len(df_filtered):,}\n"
+                
+                # Régularité
+                if 'taux_regularite' in df_filtered.columns:
+                    avg_reg = df_filtered['taux_regularite'].mean()
+                    result += f"- **Régularité moyenne** : {avg_reg:.2f}%\n"
+                
+                # Trains annulés
+                col_annules = None
+                if 'nombre_trains_supprimes' in df_filtered.columns:
+                    col_annules = 'nombre_trains_supprimes'
+                elif 'nb_trains_annules' in df_filtered.columns:
+                    col_annules = 'nb_trains_annules'
+                
+                if col_annules:
+                    total_annules = df_filtered[col_annules].sum()
+                    result += f"- **Trains annulés** : {int(total_annules):,}\n"
+                
+                # Trains prévus
+                col_prevus = None
+                if 'nombre_trains_prevus' in df_filtered.columns:
+                    col_prevus = 'nombre_trains_prevus'
+                elif 'nb_trains_programmes' in df_filtered.columns:
+                    col_prevus = 'nb_trains_programmes'
+                
+                if col_prevus:
+                    total_prevus = df_filtered[col_prevus].sum()
+                    result += f"- **Trains prévus** : {int(total_prevus):,}\n"
+                    
+                    if col_annules:
+                        taux_annulation = (total_annules / total_prevus * 100) if total_prevus > 0 else 0
+                        result += f"- **Taux d'annulation** : {taux_annulation:.2f}%\n"
+                
+                # Météo si disponible
+                if 'weather_severity_score' in df_filtered.columns:
+                    avg_meteo = df_filtered['weather_severity_score'].mean()
+                    result += f"\n🌦️ **Score météo moyen** : {avg_meteo:.1f}/100"
+                
+                return result
+                
+            except Exception as e:
+                return f"❌ Erreur : {str(e)}"
+        
+        @tool
+        def comparer_periodes(mois1: int, annee1: int, mois2: int, annee2: int, region: str = None) -> str:
+            """
+            Compare deux périodes (mois/année) pour une région donnée.
+            
+            Args:
+                mois1: Mois de la période 1 (1-12)
+                annee1: Année de la période 1
+                mois2: Mois de la période 2 (1-12)
+                annee2: Année de la période 2
+                region: Nom de la région (optionnel)
+            """
+            try:
+                if 'date' not in df.columns:
+                    return "❌ Colonne 'date' non trouvée"
+                
+                # Période 1
+                df_p1 = df[
+                    (df['date'].dt.year == annee1) & 
+                    (df['date'].dt.month == mois1)
+                ]
+                
+                # Période 2
+                df_p2 = df[
+                    (df['date'].dt.year == annee2) & 
+                    (df['date'].dt.month == mois2)
+                ]
+                
+                # Filtrer par région
+                if region and 'region' in df.columns:
+                    df_p1 = df_p1[df_p1['region'].str.lower() == region.lower()]
+                    df_p2 = df_p2[df_p2['region'].str.lower() == region.lower()]
+                
+                if len(df_p1) == 0 or len(df_p2) == 0:
+                    return "❌ Données insuffisantes pour la comparaison"
+                
+                mois_noms = ['', 'janvier', 'février', 'mars', 'avril', 'mai', 'juin', 
+                            'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
+                
+                result = f"📊 **Comparaison "
+                if region:
+                    result += f"{region} : "
+                result += f"{mois_noms[mois1]} {annee1} vs {mois_noms[mois2]} {annee2}** :\n\n"
+                
+                # Régularité
+                if 'taux_regularite' in df.columns:
+                    reg1 = df_p1['taux_regularite'].mean()
+                    reg2 = df_p2['taux_regularite'].mean()
+                    diff = reg1 - reg2
+                    
+                    result += f"📈 **Régularité** :\n"
+                    result += f"- Période 1 : {reg1:.2f}%\n"
+                    result += f"- Période 2 : {reg2:.2f}%\n"
+                    result += f"- Différence : {diff:+.2f} points\n"
+                
+                return result
+                
+            except Exception as e:
+                return f"❌ Erreur : {str(e)}"
+        
+        @tool
+        def analyser_region_complete(region: str) -> str:
+            """
+            Analyse complète d'une région spécifique.
+            
+            Args:
+                region: Nom de la région (ex: "Bretagne")
+            """
+            try:
+                if 'region' not in df.columns:
+                    return "❌ Colonne 'region' non trouvée"
+                
+                # Filtrer par région (insensible à la casse)
+                df_region = df[df['region'].str.lower() == region.lower()]
+                
+                if len(df_region) == 0:
+                    return f"❌ Région '{region}' non trouvée"
+                
+                result = f"🗺️ **Analyse complète : {region}** :\n\n"
+                result += f"- **Enregistrements** : {len(df_region):,}\n"
+                
+                # Régularité
+                if 'taux_regularite' in df_region.columns:
+                    avg_reg = df_region['taux_regularite'].mean()
+                    min_reg = df_region['taux_regularite'].min()
+                    max_reg = df_region['taux_regularite'].max()
+                    
+                    result += f"\n📈 **Régularité** :\n"
+                    result += f"- Moyenne : {avg_reg:.2f}%\n"
+                    result += f"- Min : {min_reg:.2f}%\n"
+                    result += f"- Max : {max_reg:.2f}%\n"
+                
+                # Trains
+                if 'nombre_trains_supprimes' in df_region.columns:
+                    total_annules = df_region['nombre_trains_supprimes'].sum()
+                    result += f"\n❌ **Trains annulés** : {int(total_annules):,}\n"
+                
+                # Période couverte
+                if 'date' in df_region.columns:
+                    date_min = df_region['date'].min()
+                    date_max = df_region['date'].max()
+                    result += f"\n📅 **Période** : du {date_min.strftime('%d/%m/%Y')} au {date_max.strftime('%d/%m/%Y')}"
+                
+                return result
+                
+            except Exception as e:
+                return f"❌ Erreur : {str(e)}"
+        
+        @tool
+        def chercher_anomalies_meteo(region: str = None, annee: int = None) -> str:
+            """
+            Cherche les jours avec des conditions météo extrêmes.
+            
+            Args:
+                region: Nom de la région (optionnel)
+                annee: Année à analyser (optionnel)
+            """
+            try:
+                if 'weather_severity_score' not in df.columns:
+                    return "❌ Données météo non disponibles"
+                
+                df_filtered = df.copy()
+                
+                # Filtrer par région
+                if region and 'region' in df.columns:
+                    df_filtered = df_filtered[df_filtered['region'].str.lower() == region.lower()]
+                
+                # Filtrer par année
+                if annee and 'date' in df.columns:
+                    df_filtered = df_filtered[df_filtered['date'].dt.year == annee]
+                
+                if len(df_filtered) == 0:
+                    return "❌ Aucune donnée correspondante"
+                
+                # Trouver les jours avec météo extrême (score > 70)
+                df_extreme = df_filtered[df_filtered['weather_severity_score'] > 70].copy()
+                
+                if len(df_extreme) == 0:
+                    return "✅ Aucune condition météo extrême détectée"
+                
+                df_extreme = df_extreme.sort_values('weather_severity_score', ascending=False).head(10)
+                
+                result = f"⛈️ **{len(df_extreme)} jours avec météo extrême** :\n\n"
+                
+                for idx, row in df_extreme.iterrows():
+                    date_str = row['date'].strftime('%d/%m/%Y') if 'date' in row else 'N/A'
+                    score = row['weather_severity_score']
+                    reg = row.get('taux_regularite', 'N/A')
+                    
+                    result += f"- **{date_str}** : Score {score:.0f}/100 | Régularité {reg:.1f}%\n"
+                
+                return result
+                
+            except Exception as e:
+                return f"❌ Erreur : {str(e)}"
+        
+        # ═══════════════════════════════════════════════════════════════
+        # OUTILS EXISTANTS (inchangés)
         # ═══════════════════════════════════════════════════════════════
         
         @tool
@@ -211,57 +450,6 @@ class TERAnalysisAgent:
                 return f"❌ Erreur : {str(e)}"
         
         @tool
-        def statistiques_trains() -> str:
-            """Donne des statistiques complètes sur le nombre de trains."""
-            try:
-                stats = []
-                
-                if 'nombre_trains_prevus' in df.columns:
-                    total = df['nombre_trains_prevus'].sum()
-                    stats.append(f"🚂 **Total trains prévus** : {total:,.0f}")
-                
-                if 'nombre_trains_circules' in df.columns:
-                    total = df['nombre_trains_circules'].sum()
-                    stats.append(f"✅ **Total trains circulés** : {total:,.0f}")
-                
-                if 'nombre_trains_supprimes' in df.columns:
-                    total = df['nombre_trains_supprimes'].sum()
-                    stats.append(f"❌ **Total trains supprimés** : {total:,.0f}")
-                
-                if 'nombre_trains_retard' in df.columns:
-                    total = df['nombre_trains_retard'].sum()
-                    stats.append(f"⏰ **Total trains en retard** : {total:,.0f}")
-                
-                return "\n".join(stats) if stats else "❌ Données de trains non disponibles"
-            except Exception as e:
-                return f"❌ Erreur : {str(e)}"
-        
-        # ═══════════════════════════════════════════════════════════════
-        # OUTILS MÉTÉO
-        # ═══════════════════════════════════════════════════════════════
-        
-        @tool
-        def verifier_donnees_meteo() -> str:
-            """Vérifie si les données météo sont disponibles."""
-            try:
-                weather_cols = ['temperature_mean', 'precipitation', 'snow', 'wind_speed', 'weather_severity_score']
-                available = [col for col in weather_cols if col in df.columns]
-                
-                if not available:
-                    return "❌ Aucune donnée météo disponible"
-                
-                result = f"✅ **{len(available)}/{len(weather_cols)} colonnes météo disponibles**\n\n"
-                result += f"**Colonnes** : {', '.join(available)}\n"
-                
-                if 'weather_severity_score' in df.columns:
-                    avg = df['weather_severity_score'].mean()
-                    result += f"\n🌦️ **Score sévérité moyen** : {avg:.1f}/100"
-                
-                return result
-            except Exception as e:
-                return f"❌ Erreur : {str(e)}"
-        
-        @tool
         def analyser_impact_meteo_global() -> str:
             """Analyse l'impact global de la météo sur la régularité."""
             try:
@@ -292,77 +480,26 @@ class TERAnalysisAgent:
             except Exception as e:
                 return f"❌ Erreur : {str(e)}"
         
-        @tool
-        def impact_neige_sur_regularite() -> str:
-            """Analyse l'impact de la neige sur la régularité."""
-            try:
-                if 'snow' not in df.columns or 'taux_regularite' not in df.columns:
-                    return "❌ Données de neige non disponibles"
-                
-                df_clean = df.dropna(subset=['snow', 'taux_regularite'])
-                avec_neige = df_clean[df_clean['snow'] > 0]
-                sans_neige = df_clean[df_clean['snow'] == 0]
-                
-                if len(avec_neige) == 0:
-                    return "✅ Aucun épisode neigeux détecté"
-                
-                reg_avec = avec_neige['taux_regularite'].mean()
-                reg_sans = sans_neige['taux_regularite'].mean()
-                diff = reg_sans - reg_avec
-                
-                result = f"❄️ **Impact de la neige :**\n\n"
-                result += f"- Sans neige : {reg_sans:.2f}%\n"
-                result += f"- Avec neige : {reg_avec:.2f}%\n"
-                result += f"- **Perte** : {diff:.2f} points\n"
-                result += f"- Jours avec neige : {len(avec_neige)}"
-                
-                return result
-            except Exception as e:
-                return f"❌ Erreur : {str(e)}"
-        
-        @tool
-        def impact_vent_fort() -> str:
-            """Analyse l'impact des vents forts (>90 km/h)."""
-            try:
-                if 'wind_gusts' not in df.columns or 'taux_regularite' not in df.columns:
-                    return "❌ Données de vent non disponibles"
-                
-                df_clean = df.dropna(subset=['wind_gusts', 'taux_regularite'])
-                vent_fort = df_clean[df_clean['wind_gusts'] > 90]
-                vent_normal = df_clean[df_clean['wind_gusts'] <= 90]
-                
-                if len(vent_fort) == 0:
-                    return "✅ Aucun vent fort (>90 km/h) détecté"
-                
-                reg_fort = vent_fort['taux_regularite'].mean()
-                reg_normal = vent_normal['taux_regularite'].mean()
-                diff = reg_normal - reg_fort
-                
-                result = f"💨 **Impact du vent fort :**\n\n"
-                result += f"- Vent normal : {reg_normal:.2f}%\n"
-                result += f"- Vent fort : {reg_fort:.2f}%\n"
-                result += f"- **Perte** : {diff:.2f} points\n"
-                result += f"- Jours avec vent fort : {len(vent_fort)}"
-                
-                return result
-            except Exception as e:
-                return f"❌ Erreur : {str(e)}"
-        
         # ═══════════════════════════════════════════════════════════════
         # RETOUR DE TOUS LES OUTILS
         # ═══════════════════════════════════════════════════════════════
         
         return [
+            # Debug
             debug_dataframe_info,
+            
+            # NOUVEAUX outils de filtrage
+            filtrer_par_mois_annee_region,
+            comparer_periodes,
+            analyser_region_complete,
+            chercher_anomalies_meteo,
+            
+            # Outils existants
             calculer_regularite_globale,
             liste_regions_disponibles,
             top_regions_regulieres,
             pires_regions,
-            statistiques_trains,
-            verifier_donnees_meteo,
-            analyser_impact_meteo_global,
-            impact_neige_sur_regularite,
-            impact_vent_fort
+            analyser_impact_meteo_global
         ]
     
     def _create_graph(self):
@@ -418,3 +555,7 @@ class TERAnalysisAgent:
             
         except Exception as e:
             return f"❌ Erreur : {str(e)}"
+    
+    def reset_conversation(self):
+        """Réinitialise l'historique (non implémenté avec LangGraph stateless)"""
+        pass
