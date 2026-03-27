@@ -288,44 +288,6 @@ st.set_page_config(
     layout=Config.LAYOUT,
     initial_sidebar_state="expanded"
 )
-"""
-# Style CSS personnalisé
-st.markdown("""
-    <style>
-    .main-header {
-        #font-size: 3rem;
-        font-weight: bold;
-        color: #1f77b4;
-        text-align: center;
-        #padding: 1rem 0;
-    }
-    .sub-header {
-        #font-size: 1.2rem;
-        color: #666;
-        text-align: center;
-        #margin-bottom: 2rem;
-    }
-    .stMetric {
-        background-color: #f0f2f6;
-        #padding: 1rem;
-        #border-radius: 0.5rem;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    .chat-message {
-        padding: 1rem;
-        #border-radius: 0.5rem;
-        #margin: 0.5rem 0;
-    }
-    .user-message {
-        background-color: #e3f2fd;
-        border-left: 4px solid #1976d2;
-    }
-    .assistant-message {
-        background-color: #f1f8e9;
-        border-left: 4px solid #689f38;
-    }
-    </style>
-""", unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════════
 # PAGE : 📊 DASHBOARD
