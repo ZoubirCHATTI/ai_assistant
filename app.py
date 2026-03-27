@@ -23,7 +23,8 @@ from visualizations import (
     plot_custom_visualization
 )
 from ai_agent import TERAnalysisAgent
-
+# Ajoute cet import avec les autres imports
+from weather_analyzer import WeatherAnalyzer
 # ═══════════════════════════════════════════════════════════════════════
 # CONFIGURATION DE LA PAGE
 # ═══════════════════════════════════════════════════════════════════════
@@ -105,6 +106,8 @@ with st.sidebar:
             "💬 Chat IA",
             "📈 Visualisations Personnalisées",
             "🔍 Explorateur de Données",
+            "🌦️ Analyse Météo",  # ← NOUVELLE PAGE
+
             "⚙️ Paramètres"
         ]
     )
@@ -601,6 +604,537 @@ elif page == "🔍 Explorateur de Données":
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True
         )
+
+# ═══════════════════════════════════════════════════════════════════════
+# PAGE : 🌦️ ANALYSE MÉTÉO
+# ═══════════════════════════════════════════════════════════════════════
+
+elif page == "🌦️ Analyse Météo":
+    st.title("🌦️ Analyse de l'Impact Météorologique")
+    
+    st.markdown("""
+    Cette section analyse la corrélation entre les conditions météorologiques et les retards/annulations de trains.
+    
+    **Sources de données météo disponibles :**
+    - 🌍 **Open-Meteo** : API gratuite, données historiques complètes
+    - 🌤️ **OpenWeatherMap** : Nécessite une clé API (optionnel, plus précis)
+    """)
+    
+    # Initialiser l'analyseur météo
+    if 'weather_analyzer' not in st.session_state:
+        st.session_state.weather_analyzer = WeatherAnalyzer(df)
+    
+    weather_analyzer = st.session_state.weather_analyzer
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # SECTION 1 : ENRICHISSEMENT DES DONNÉES
+    # ═══════════════════════════════════════════════════════════════════
+    
+    st.markdown("---")
+    st.subheader("📥 Étape 1 : Enrichissement avec Données Météo")
+    
+    with st.expander("⚙️ Configuration de l'enrichissement", expanded=True):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            sample_size = st.slider(
+                "Nombre d'enregistrements à enrichir",
+                min_value=100,
+                max_value=min(5000, len(df)),
+                value=min(1000, len(df)),
+                step=100,
+                help="⚠️ Plus le nombre est élevé, plus l'enrichissement prendra du temps (limite API)"
+            )
+        
+        with col2:
+            use_openweather = st.checkbox(
+                "Utiliser OpenWeatherMap (optionnel)",
+                help="Nécessite une clé API. Plus précis mais limité en appels gratuits."
+            )
+            
+            openweather_key = None
+            if use_openweather:
+                openweather_key = st.text_input(
+                    "Clé API OpenWeatherMap",
+                    type="password",
+                    help="Obtenez une clé gratuite sur https://openweathermap.org/api"
+                )
+        
+        st.info("""
+        💡 **Comment ça marche ?**
+        
+        1. L'application récupère les données météo historiques pour chaque date
+        2. Les données sont associées aux régions via les grandes villes
+        3. Un score de sévérité météo (0-100) est calculé
+        4. Les corrélations avec les retards sont analysées
+        
+        ⏱️ **Temps estimé** : ~5-10 minutes pour 1000 enregistrements
+        """)
+        
+        enrich_button = st.button(
+            "🚀 Lancer l'enrichissement météo",
+            type="primary",
+            use_container_width=True
+        )
+    
+    if enrich_button:
+        with st.spinner("🌦️ Enrichissement en cours... Cela peut prendre plusieurs minutes."):
+            df_enriched = weather_analyzer.enrich_with_weather(
+                sample_size=sample_size,
+                use_api_key=openweather_key if use_openweather else None
+            )
+            
+            if df_enriched is not None:
+                st.session_state.df_enriched = df_enriched
+                st.success("✅ Enrichissement terminé avec succès !")
+                st.balloons()
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # SECTION 2 : VISUALISATION DES DONNÉES MÉTÉO
+    # ═══════════════════════════════════════════════════════════════════
+    
+    if 'df_enriched' in st.session_state:
+        df_enriched = st.session_state.df_enriched
+        
+        st.markdown("---")
+        st.subheader("📊 Étape 2 : Aperçu des Données Météo")
+        
+        # Statistiques météo
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            if 'temperature_mean' in df_enriched.columns:
+                avg_temp = df_enriched['temperature_mean'].mean()
+                st.metric(
+                    "🌡️ Température Moyenne",
+                    f"{avg_temp:.1f}°C"
+                )
+        
+        with col2:
+            if 'precipitation' in df_enriched.columns:
+                total_precip = df_enriched['precipitation'].sum()
+                st.metric(
+                    "🌧️ Précipitations Totales",
+                    f"{total_precip:.0f} mm"
+                )
+        
+        with col3:
+            if 'snow' in df_enriched.columns:
+                jours_neige = (df_enriched['snow'] > 0).sum()
+                st.metric(
+                    "❄️ Jours avec Neige",
+                    f"{jours_neige}"
+                )
+        
+        with col4:
+            if 'wind_gusts' in df_enriched.columns:
+                max_wind = df_enriched['wind_gusts'].max()
+                st.metric(
+                    "💨 Rafale Max",
+                    f"{max_wind:.0f} km/h"
+                )
+        
+        # Aperçu du dataset enrichi
+        st.markdown("### 📋 Aperçu des Données Enrichies")
+        
+        weather_cols = [col for col in df_enriched.columns if col in [
+            'date', 'region', 'city', 'taux_regularite',
+            'temperature_mean', 'precipitation', 'snow', 'wind_speed',
+            'weather_severity_score'
+        ]]
+        
+        if weather_cols:
+            st.dataframe(
+                df_enriched[weather_cols].head(20),
+                use_container_width=True
+            )
+        
+        # ═══════════════════════════════════════════════════════════════
+        # SECTION 3 : ANALYSE DE CORRÉLATION
+        # ═══════════════════════════════════════════════════════════════
+        
+        st.markdown("---")
+        st.subheader("🔬 Étape 3 : Analyse des Corrélations")
+        
+        analyze_button = st.button(
+            "📊 Analyser l'Impact Météo",
+            type="primary",
+            use_container_width=True
+        )
+        
+        if analyze_button:
+            with st.spinner("🔬 Analyse statistique en cours..."):
+                results = weather_analyzer.analyze_weather_impact()
+                
+                if 'error' in results:
+                    st.error(results['error'])
+                else:
+                    st.session_state.weather_results = results
+        
+        # Affichage des résultats
+        if 'weather_results' in st.session_state:
+            results = st.session_state.weather_results
+            
+            # Corrélation principale
+            if 'correlation_regularite_meteo' in results:
+                corr_data = results['correlation_regularite_meteo']
+                
+                st.markdown("### 📈 Corrélation Globale")
+                
+                col1, col2 = st.columns([2, 1])
+                
+                with col1:
+                    # Affichage de la corrélation
+                    corr_value = corr_data['correlation']
+                    
+                    # Couleur selon la force de la corrélation
+                    if abs(corr_value) < 0.3:
+                        color = "blue"
+                    elif abs(corr_value) < 0.6:
+                        color = "orange"
+                    else:
+                        color = "red"
+                    
+                    st.markdown(f"""
+                    <div style='padding: 2rem; background-color: #f0f2f6; border-radius: 10px; border-left: 5px solid {color};'>
+                        <h3 style='margin: 0; color: {color};'>Coefficient de Corrélation : {corr_value:.3f}</h3>
+                        <p style='margin: 0.5rem 0 0 0; font-size: 1.1rem;'>{corr_data['interpretation']}</p>
+                        <p style='margin: 0.5rem 0 0 0; color: #666;'>
+                            Significativité : <strong>{corr_data['significance']}</strong> (p = {corr_data['p_value']:.4f})
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col2:
+                    st.info("""
+                    **Interprétation :**
+                    
+                    - **< 0.3** : Faible corrélation
+                    - **0.3-0.6** : Corrélation modérée
+                    - **> 0.6** : Forte corrélation
+                    
+                    Une corrélation **négative** signifie que la régularité diminue quand la sévérité météo augmente.
+                    """)
+            
+            # Impact de la neige
+            if 'impact_neige' in results:
+                st.markdown("### ❄️ Impact de la Neige")
+                
+                impact = results['impact_neige']
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric(
+                        "Sans Neige",
+                        f"{impact['regularite_sans_neige']:.2f}%",
+                        delta=None
+                    )
+                
+                with col2:
+                    st.metric(
+                        "Avec Neige",
+                        f"{impact['regularite_avec_neige']:.2f}%",
+                        delta=f"-{impact['difference']:.2f}%",
+                        delta_color="inverse"
+                    )
+                
+                with col3:
+                    st.metric(
+                        "Perte de Régularité",
+                        f"{impact['difference']:.2f}%",
+                        delta=None
+                    )
+                
+                if impact['difference'] > 5:
+                    st.warning(f"⚠️ **Impact significatif** : La neige réduit la régularité de {impact['difference']:.1f} points de pourcentage.")
+                elif impact['difference'] > 2:
+                    st.info(f"📊 **Impact modéré** : La neige affecte la régularité de {impact['difference']:.1f} points.")
+                else:
+                    st.success(f"✅ **Impact faible** : La neige a un effet limité sur la régularité.")
+            
+            # Impact du vent
+            if 'impact_vent' in results:
+                st.markdown("### 💨 Impact du Vent Fort (> 90 km/h)")
+                
+                impact = results['impact_vent']
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric(
+                        "Vent Normal",
+                        f"{impact['regularite_vent_normal']:.2f}%"
+                    )
+                
+                with col2:
+                    st.metric(
+                        "Vent Fort",
+                        f"{impact['regularite_vent_fort']:.2f}%",
+                        delta=f"-{impact['difference']:.2f}%",
+                        delta_color="inverse"
+                    )
+                
+                with col3:
+                    st.metric(
+                        "Perte de Régularité",
+                        f"{impact['difference']:.2f}%"
+                    )
+            
+            # Impact de la pluie
+            if 'impact_pluie' in results:
+                st.markdown("### 🌧️ Impact de la Pluie Forte (> 10 mm)")
+                
+                impact = results['impact_pluie']
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric(
+                        "Pluie Faible",
+                        f"{impact['regularite_pluie_faible']:.2f}%"
+                    )
+                
+                with col2:
+                    st.metric(
+                        "Pluie Forte",
+                        f"{impact['regularite_pluie_forte']:.2f}%",
+                        delta=f"-{impact['difference']:.2f}%",
+                        delta_color="inverse"
+                    )
+                
+                with col3:
+                    st.metric(
+                        "Perte de Régularité",
+                        f"{impact['difference']:.2f}%"
+                    )
+            
+            # Retards par condition météo
+            if 'retards_par_meteo' in results:
+                st.markdown("### 📊 Retards Moyens par Condition Météo")
+                
+                retards = results['retards_par_meteo']
+                
+                df_plot = pd.DataFrame({
+                    'Condition': list(retards.keys()),
+                    'Retards Moyens': list(retards.values())
+                })
+                
+                fig = px.bar(
+                    df_plot,
+                    x='Condition',
+                    y='Retards Moyens',
+                    color='Condition',
+                    color_discrete_map={
+                        'Bonne': 'green',
+                        'Correcte': 'yellow',
+                        'Difficile': 'orange',
+                        'Extrême': 'red'
+                    },
+                    title="Nombre Moyen de Trains en Retard selon les Conditions Météo"
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+        
+        # ═══════════════════════════════════════════════════════════════
+        # SECTION 4 : VISUALISATIONS AVANCÉES
+        # ═══════════════════════════════════════════════════════════════
+        
+        st.markdown("---")
+        st.subheader("📈 Étape 4 : Visualisations Avancées")
+        
+        viz_button = st.button(
+            "🎨 Générer les Visualisations",
+            type="primary",
+            use_container_width=True
+        )
+        
+        if viz_button:
+            weather_analyzer.plot_weather_impact()
+        
+        # ═══════════════════════════════════════════════════════════════
+        # SECTION 5 : EXPORT DES DONNÉES ENRICHIES
+        # ═══════════════════════════════════════════════════════════════
+        
+        st.markdown("---")
+        st.subheader("💾 Étape 5 : Export des Données Enrichies")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Export CSV
+            csv_enriched = df_enriched.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Télécharger CSV (avec météo)",
+                data=csv_enriched,
+                file_name=f"ter_enriched_weather_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        
+        with col2:
+            # Export Excel
+            from io import BytesIO
+            buffer = BytesIO()
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                df_enriched.to_excel(writer, index=False, sheet_name='TER_Weather_Data')
+                
+                # Ajouter une feuille avec les résultats d'analyse
+                if 'weather_results' in st.session_state:
+                    results_df = pd.DataFrame([st.session_state.weather_results])
+                    results_df.to_excel(writer, index=False, sheet_name='Analysis_Results')
+            
+            buffer.seek(0)
+            
+            st.download_button(
+                label="📥 Télécharger Excel (avec météo)",
+                data=buffer,
+                file_name=f"ter_enriched_weather_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+        
+        # ═══════════════════════════════════════════════════════════════
+        # SECTION 6 : RAPPORT AUTOMATIQUE
+        # ═══════════════════════════════════════════════════════════════
+        
+        st.markdown("---")
+        st.subheader("📄 Rapport Automatique")
+        
+        if st.button("📝 Générer le Rapport d'Analyse", use_container_width=True):
+            with st.spinner("📝 Génération du rapport..."):
+                report = generate_weather_report(df_enriched, st.session_state.get('weather_results', {}))
+                
+                st.markdown(report)
+                
+                # Télécharger le rapport
+                st.download_button(
+                    label="💾 Télécharger le Rapport (Markdown)",
+                    data=report,
+                    file_name=f"rapport_meteo_{datetime.now().strftime('%Y%m%d')}.md",
+                    mime="text/markdown"
+                )
+    
+    else:
+        st.info("👆 Commencez par enrichir le dataset avec les données météo pour accéder aux analyses.")
+
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # FONCTION UTILITAIRE : GÉNÉRATION DE RAPPORT
+    # ═══════════════════════════════════════════════════════════════════════
+    
+    def generate_weather_report(df: pd.DataFrame, results: dict) -> str:
+        """Génère un rapport markdown de l'analyse météo"""
+        
+        report = f"""
+    # 🌦️ Rapport d'Analyse - Impact Météorologique sur la Ponctualité TER
+    
+    **Date du rapport** : {datetime.now().strftime('%d/%m/%Y %H:%M')}  
+    **Période analysée** : {df['date'].min().strftime('%d/%m/%Y')} - {df['date'].max().strftime('%d/%m/%Y')}  
+    **Nombre d'enregistrements** : {len(df):,}
+    
+    ---
+    
+    ## 📊 Résumé Exécutif
+    
+    """
+        
+        if 'correlation_regularite_meteo' in results:
+            corr = results['correlation_regularite_meteo']
+            report += f"""
+    ### Corrélation Météo-Régularité
+    
+    - **Coefficient de corrélation** : {corr['correlation']:.3f}
+    - **Interprétation** : {corr['interpretation']}
+    - **Significativité statistique** : {corr['significance']} (p-value = {corr['p_value']:.4f})
+    
+    """
+        
+        if 'impact_neige' in results:
+            neige = results['impact_neige']
+            report += f"""
+    ### ❄️ Impact de la Neige
+    
+    - Régularité sans neige : **{neige['regularite_sans_neige']:.2f}%**
+    - Régularité avec neige : **{neige['regularite_avec_neige']:.2f}%**
+    - **Perte de régularité : {neige['difference']:.2f} points**
+    
+    """
+        
+        if 'impact_vent' in results:
+            vent = results['impact_vent']
+            report += f"""
+    ### 💨 Impact du Vent Fort
+    
+    - Régularité (vent normal) : **{vent['regularite_vent_normal']:.2f}%**
+    - Régularité (vent fort >90km/h) : **{vent['regularite_vent_fort']:.2f}%**
+    - **Perte de régularité : {vent['difference']:.2f} points**
+    
+    """
+        
+        if 'impact_pluie' in results:
+            pluie = results['impact_pluie']
+            report += f"""
+    ### 🌧️ Impact de la Pluie Forte
+    
+    - Régularité (pluie faible) : **{pluie['regularite_pluie_faible']:.2f}%**
+    - Régularité (pluie forte >10mm) : **{pluie['regularite_pluie_forte']:.2f}%**
+    - **Perte de régularité : {pluie['difference']:.2f} points**
+    
+    """
+        
+        report += f"""
+    ---
+    
+    ## 📈 Données Météorologiques
+    
+    ### Statistiques Générales
+    
+    """
+        
+        if 'temperature_mean' in df.columns:
+            report += f"- **Température moyenne** : {df['temperature_mean'].mean():.1f}°C\n"
+            report += f"- **Température minimale** : {df['temperature_mean'].min():.1f}°C\n"
+            report += f"- **Température maximale** : {df['temperature_mean'].max():.1f}°C\n\n"
+        
+        if 'precipitation' in df.columns:
+            report += f"- **Précipitations totales** : {df['precipitation'].sum():.0f} mm\n"
+            report += f"- **Jours avec pluie** : {(df['precipitation'] > 0).sum()}\n\n"
+        
+        if 'snow' in df.columns:
+            report += f"- **Jours avec neige** : {(df['snow'] > 0).sum()}\n\n"
+        
+        report += """
+    ---
+    
+    ## 🎯 Recommandations
+    
+    ### Actions Prioritaires
+    
+    1. **Renforcer la prévention lors d'épisodes neigeux**
+       - Anticiper les perturbations avec des prévisions météo en temps réel
+       - Prépositionner les équipes de maintenance
+    
+    2. **Adapter la circulation en cas de vent fort**
+       - Mettre en place des alertes automatiques
+       - Réduire la vitesse des trains préventivement
+    
+    3. **Améliorer la communication voyageurs**
+       - Informer en amont des perturbations météo prévues
+       - Proposer des alternatives de transport
+    
+    ### Suivi et Monitoring
+    
+    - Continuer l'analyse mensuelle de l'impact météo
+    - Développer un modèle prédictif de retards basé sur les prévisions météo
+    - Créer un dashboard temps réel météo-ponctualité
+    
+    ---
+    
+    **Rapport généré automatiquement par l'Assistant IA TER SNCF**
+    """
+        
+        return report
 
 # ═══════════════════════════════════════════════════════════════════════
 # PAGE : ⚙️ PARAMÈTRES
