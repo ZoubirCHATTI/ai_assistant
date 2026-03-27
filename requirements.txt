@@ -1,16 +1,3 @@
-streamlit
-pandas
-openpyxl
-matplotlib
-seaborn
-azure-storage-blob
-langchain
-langchain-core
-langchain-mistralai
-langchain-experimental
-langgraph
-tabulate
- 
 streamlit>=1.32.0
 pandas>=2.0.0
 matplotlib>=3.7.0
@@ -25,11 +12,3 @@ langchain-experimental
 python-dotenv
 numpy
 scipy
-# Analyse statistique et météo
-scipy>=1.11.0
-requests>=2.31.0
-numpy>=1.24.0
-
-# Utilitaires
-python-dotenv
-langchain_mistralai
