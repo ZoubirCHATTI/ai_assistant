@@ -245,7 +245,7 @@ if page == "🏠 Accueil":
 
 @st.cache_data(ttl=3600)
 def load_ter_data():
-    """Charge les données TER avec cache"""
+   
     try:
         loader = TERDataLoader()
         df = loader.load_data()  # Cette méthode calcule maintenant automatiquement le taux_regularite
