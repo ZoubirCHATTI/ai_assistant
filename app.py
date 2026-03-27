@@ -25,6 +25,7 @@ from visualizations import (
 from ai_agent import TERAnalysisAgent
 # Ajoute cet import avec les autres imports
 from weather_analyzer import WeatherAnalyzer
+from data_loader import TERDataLoader  
 
 # Au début de app.py, après les imports
 
