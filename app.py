@@ -13,7 +13,8 @@ from datetime import datetime
 
 # Import des modules locaux
 from config import Config, check_config
-from data_loader import load_data_from_azure, get_data_summary
+#from data_loader import load_data_from_azure, get_data_summary
+from data_loader import TERDataLoader  # ✅ Import correct
 from visualizations import (
     plot_kpi_cards,
     plot_regularite_evolution,
