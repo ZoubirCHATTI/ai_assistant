@@ -792,6 +792,134 @@ elif page == "🌦️ Analyse Météo":
 # PAGE : 💬 CHAT IA
 # ═══════════════════════════════════════════════════════════════════════
 
+def _generate_smart_chart(question: str, df: pd.DataFrame):
+    """
+    Génère automatiquement un graphique Plotly selon la question posée.
+    Retourne None si aucun graphique pertinent n'est trouvé.
+    """
+    q = question.lower()
+
+    if 'taux_regularite' not in df.columns:
+        return None
+
+    # Évolution temporelle
+    if any(w in q for w in ['évolution', 'evolution', 'temps', 'tendance', 'courbe', 'mois']):
+        if 'date' not in df.columns:
+            return None
+        time_stats = df.groupby('date')['taux_regularite'].mean().reset_index()
+        fig = px.line(
+            time_stats, x='date', y='taux_regularite',
+            title="📈 Évolution de la régularité",
+            labels={'date': 'Date', 'taux_regularite': 'Régularité (%)'},
+            markers=True
+        )
+        if len(time_stats) >= 7:
+            fig.add_scatter(
+                x=time_stats['date'],
+                y=time_stats['taux_regularite'].rolling(7).mean(),
+                mode='lines', name='Tendance (7j)',
+                line=dict(color='red', dash='dash')
+            )
+        return fig
+
+    # Comparaison régions spécifiques
+    if 'compare' in q or 'comparaison' in q:
+        if 'region' not in df.columns:
+            return None
+        mentioned = [r for r in df['region'].unique() if r.lower() in q]
+        if len(mentioned) >= 2:
+            region_stats = df[df['region'].isin(mentioned)].groupby('region')['taux_regularite'].mean()
+            fig = px.bar(
+                x=region_stats.index, y=region_stats.values,
+                title=f"📊 Comparaison : {' vs '.join(mentioned)}",
+                labels={'x': 'Région', 'y': 'Régularité (%)'},
+                color=region_stats.values, color_continuous_scale='RdYlGn',
+                text=region_stats.values.round(2)
+            )
+            fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+            fig.update_coloraxes(showscale=False)
+            return fig
+
+    # Distribution / histogramme
+    if any(w in q for w in ['distribution', 'histogramme', 'histogram', 'répartition']):
+        fig = px.histogram(
+            df, x='taux_regularite', nbins=40,
+            title="📊 Distribution des taux de régularité",
+            labels={'taux_regularite': 'Régularité (%)'}
+        )
+        mean_val = df['taux_regularite'].mean()
+        fig.add_vline(x=mean_val, line_dash="dash", line_color="red",
+                      annotation_text=f"Moyenne: {mean_val:.1f}%")
+        return fig
+
+    # Box plot
+    if 'box' in q or 'boxplot' in q:
+        if 'region' not in df.columns:
+            return None
+        top_r = df.groupby('region')['taux_regularite'].mean().nlargest(10).index
+        fig = px.box(
+            df[df['region'].isin(top_r)],
+            x='region', y='taux_regularite',
+            title="📦 Distribution par région (Top 10)",
+            color='region'
+        )
+        fig.update_layout(xaxis_tickangle=-45, showlegend=False)
+        return fig
+
+    # Impact météo (neige)
+    if any(w in q for w in ['neige', 'météo', 'meteo', 'vent', 'pluie', 'température']):
+        if 'weather_severity_score' in df.columns:
+            d = df.copy()
+            d['meteo_cat'] = pd.cut(
+                d['weather_severity_score'],
+                bins=[-1, 20, 40, 60, 100],
+                labels=['Bonne', 'Correcte', 'Difficile', 'Extrême']
+            )
+            stats = d.groupby('meteo_cat')['taux_regularite'].mean()
+            fig = px.bar(
+                x=stats.index, y=stats.values,
+                title="🌦️ Régularité selon la sévérité météo",
+                labels={'x': 'Condition météo', 'y': 'Régularité (%)'},
+                color=['green', 'yellow', 'orange', 'red'][:len(stats)],
+                text=stats.values.round(2)
+            )
+            fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+            return fig
+
+    # Défaut : Top 10 régions par régularité
+    if 'region' not in df.columns:
+        return None
+
+    n = 5
+    if '10' in q or 'top 10' in q:
+        n = 10
+    if 'pire' in q or 'worst' in q:
+        region_stats = df.groupby('region')['taux_regularite'].mean().nsmallest(n)
+        title = f"📉 {n} pires régions"
+    else:
+        region_stats = df.groupby('region')['taux_regularite'].mean().nlargest(n)
+        title = f"🏆 Top {n} régions"
+
+    if 'camembert' in q or 'pie' in q:
+        fig = px.pie(
+            values=region_stats.values, names=region_stats.index,
+            title=title, color_discrete_sequence=px.colors.qualitative.Set3
+        )
+    else:
+        fig = px.bar(
+            x=region_stats.index, y=region_stats.values,
+            title=title,
+            labels={'x': 'Région', 'y': 'Régularité (%)'},
+            color=region_stats.values, color_continuous_scale='RdYlGn',
+            text=region_stats.values.round(2)
+        )
+        fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+        fig.update_layout(xaxis_tickangle=-45, showlegend=False)
+        fig.update_coloraxes(showscale=False)
+
+    return fig
+
+
 elif page == "💬 Chat IA":
     st.title("💬 Chat avec l'Assistant IA")
 
@@ -1032,133 +1160,6 @@ elif page == "⚙️ Paramètres":
 # ═══════════════════════════════════════════════════════════════════════
 # HELPER : GÉNÉRATION INTELLIGENTE DE GRAPHIQUES
 # ═══════════════════════════════════════════════════════════════════════
-@tools
-def _generate_smart_chart(question: str, df: pd.DataFrame):
-    """
-    Génère automatiquement un graphique Plotly selon la question posée.
-    Retourne None si aucun graphique pertinent n'est trouvé.
-    """
-    q = question.lower()
-
-    if 'taux_regularite' not in df.columns:
-        return None
-
-    # Évolution temporelle
-    if any(w in q for w in ['évolution', 'evolution', 'temps', 'tendance', 'courbe', 'mois']):
-        if 'date' not in df.columns:
-            return None
-        time_stats = df.groupby('date')['taux_regularite'].mean().reset_index()
-        fig = px.line(
-            time_stats, x='date', y='taux_regularite',
-            title="📈 Évolution de la régularité",
-            labels={'date': 'Date', 'taux_regularite': 'Régularité (%)'},
-            markers=True
-        )
-        if len(time_stats) >= 7:
-            fig.add_scatter(
-                x=time_stats['date'],
-                y=time_stats['taux_regularite'].rolling(7).mean(),
-                mode='lines', name='Tendance (7j)',
-                line=dict(color='red', dash='dash')
-            )
-        return fig
-
-    # Comparaison régions spécifiques
-    if 'compare' in q or 'comparaison' in q:
-        if 'region' not in df.columns:
-            return None
-        mentioned = [r for r in df['region'].unique() if r.lower() in q]
-        if len(mentioned) >= 2:
-            region_stats = df[df['region'].isin(mentioned)].groupby('region')['taux_regularite'].mean()
-            fig = px.bar(
-                x=region_stats.index, y=region_stats.values,
-                title=f"📊 Comparaison : {' vs '.join(mentioned)}",
-                labels={'x': 'Région', 'y': 'Régularité (%)'},
-                color=region_stats.values, color_continuous_scale='RdYlGn',
-                text=region_stats.values.round(2)
-            )
-            fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
-            fig.update_coloraxes(showscale=False)
-            return fig
-
-    # Distribution / histogramme
-    if any(w in q for w in ['distribution', 'histogramme', 'histogram', 'répartition']):
-        fig = px.histogram(
-            df, x='taux_regularite', nbins=40,
-            title="📊 Distribution des taux de régularité",
-            labels={'taux_regularite': 'Régularité (%)'}
-        )
-        mean_val = df['taux_regularite'].mean()
-        fig.add_vline(x=mean_val, line_dash="dash", line_color="red",
-                      annotation_text=f"Moyenne: {mean_val:.1f}%")
-        return fig
-
-    # Box plot
-    if 'box' in q or 'boxplot' in q:
-        if 'region' not in df.columns:
-            return None
-        top_r = df.groupby('region')['taux_regularite'].mean().nlargest(10).index
-        fig = px.box(
-            df[df['region'].isin(top_r)],
-            x='region', y='taux_regularite',
-            title="📦 Distribution par région (Top 10)",
-            color='region'
-        )
-        fig.update_layout(xaxis_tickangle=-45, showlegend=False)
-        return fig
-
-    # Impact météo (neige)
-    if any(w in q for w in ['neige', 'météo', 'meteo', 'vent', 'pluie', 'température']):
-        if 'weather_severity_score' in df.columns:
-            d = df.copy()
-            d['meteo_cat'] = pd.cut(
-                d['weather_severity_score'],
-                bins=[-1, 20, 40, 60, 100],
-                labels=['Bonne', 'Correcte', 'Difficile', 'Extrême']
-            )
-            stats = d.groupby('meteo_cat')['taux_regularite'].mean()
-            fig = px.bar(
-                x=stats.index, y=stats.values,
-                title="🌦️ Régularité selon la sévérité météo",
-                labels={'x': 'Condition météo', 'y': 'Régularité (%)'},
-                color=['green', 'yellow', 'orange', 'red'][:len(stats)],
-                text=stats.values.round(2)
-            )
-            fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
-            return fig
-
-    # Défaut : Top 10 régions par régularité
-    if 'region' not in df.columns:
-        return None
-
-    n = 5
-    if '10' in q or 'top 10' in q:
-        n = 10
-    if 'pire' in q or 'worst' in q:
-        region_stats = df.groupby('region')['taux_regularite'].mean().nsmallest(n)
-        title = f"📉 {n} pires régions"
-    else:
-        region_stats = df.groupby('region')['taux_regularite'].mean().nlargest(n)
-        title = f"🏆 Top {n} régions"
-
-    if 'camembert' in q or 'pie' in q:
-        fig = px.pie(
-            values=region_stats.values, names=region_stats.index,
-            title=title, color_discrete_sequence=px.colors.qualitative.Set3
-        )
-    else:
-        fig = px.bar(
-            x=region_stats.index, y=region_stats.values,
-            title=title,
-            labels={'x': 'Région', 'y': 'Régularité (%)'},
-            color=region_stats.values, color_continuous_scale='RdYlGn',
-            text=region_stats.values.round(2)
-        )
-        fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
-        fig.update_layout(xaxis_tickangle=-45, showlegend=False)
-        fig.update_coloraxes(showscale=False)
-
-    return fig
 
 
 # ═══════════════════════════════════════════════════════════════════════
