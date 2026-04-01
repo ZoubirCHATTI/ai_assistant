@@ -792,7 +792,8 @@ elif page == "🌦️ Analyse Météo":
 # PAGE : 💬 CHAT IA
 # ═══════════════════════════════════════════════════════════════════════
 
-def _generate_smart_chart(question: str, df: pd.DataFrame):
+elif page == "💬 Chat IA":
+    def _generate_smart_chart(question: str, df: pd.DataFrame):
     """
     Génère automatiquement un graphique Plotly selon la question posée.
     Retourne None si aucun graphique pertinent n'est trouvé.
@@ -920,7 +921,6 @@ def _generate_smart_chart(question: str, df: pd.DataFrame):
     return fig
 
 
-elif page == "💬 Chat IA":
     st.title("💬 Chat avec l'Assistant IA")
 
     st.markdown("""
