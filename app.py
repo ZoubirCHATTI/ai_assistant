@@ -386,58 +386,224 @@ elif page == "📈 Visualisations personnalisées":
     with col1:
         st.subheader("⚙️ Configuration")
 
-        chart_type = st.selectbox(
-            "Type de graphique",
-            ["Ligne", "Barre", "Scatter", "Histogramme", "Box Plot"]
+        # Catégorisation des graphiques
+        chart_categories = {
+            "📊 Graphiques de base": [
+                "Ligne", "Barre", "Barre horizontale",
+                "Barre empilée", "Barre groupée", "Area Chart"
+            ],
+            "📉 Distribution": [
+                "Histogramme", "Box Plot", "Violin Plot",
+                "Strip Plot", "ECDF"
+            ],
+            "🥧 Proportions": [
+                "Camembert (Pie)", "Donut", "Treemap",
+                "Sunburst", "Funnel"
+            ],
+            "🔍 Relations": [
+                "Scatter", "Scatter avec tendance",
+                "Bubble Chart", "Density Heatmap", "Density Contour"
+            ],
+            "🌡️ Matrices": [
+                "Heatmap (Matrice de corrélation)",
+                "Heatmap personnalisée"
+            ],
+            "🎯 Avancés": [
+                "Waterfall", "Gauge (Jauge)",
+                "Parallel Categories", "Parallel Coordinates"
+            ]
+        }
+
+        # Sélection
+        category = st.selectbox(
+            "Catégorie de graphique",
+            list(chart_categories.keys())
         )
 
-        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+        chart_type = st.selectbox(
+            "Type de graphique",
+            chart_categories[category]
+        )
+
+        # Aide contextuelle
+        help_texts = {
+            "Camembert (Pie)": "📌 Idéal pour montrer des proportions (ex: répartition par région)",
+            "Treemap": "📌 Affiche des proportions hiérarchiques avec des rectangles",
+            "Heatmap (Matrice de corrélation)": "📌 Affiche les corrélations entre variables numériques",
+            "Bubble Chart": "📌 Nécessite 3 dimensions : X, Y et Taille",
+            "Waterfall": "📌 Montre l'évolution cumulative (positif/négatif)",
+            "Sunburst": "📌 Nécessite au moins 2 colonnes catégorielles",
+            "Parallel Coordinates": "📌 Compare plusieurs variables numériques simultanément"
+        }
+
+        if chart_type in help_texts:
+            st.info(help_texts[chart_type])
+
+        # Colonnes
+        numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+        categorical_cols = df.select_dtypes(include=["object"]).columns.tolist()
         all_cols = df.columns.tolist()
 
-        x_col = st.selectbox("Axe X", all_cols)
-        y_col = st.selectbox("Axe Y", numeric_cols) if chart_type != "Histogramme" else None
+        # Besoins
+        needs_y = chart_type not in [
+            "Histogramme", "Camembert (Pie)", "Donut",
+            "Treemap", "ECDF", "Heatmap (Matrice de corrélation)"
+        ]
 
+        needs_numeric_x = chart_type in [
+            "Scatter", "Scatter avec tendance", "Bubble Chart",
+            "Density Heatmap", "Density Contour",
+            "Heatmap (Matrice de corrélation)"
+        ]
+
+        # Axe X
+        if chart_type == "Heatmap (Matrice de corrélation)":
+            x_col = None
+            st.info("📊 La matrice utilisera toutes les colonnes numériques")
+        else:
+            x_col = st.selectbox(
+                "Axe X",
+                numeric_cols if needs_numeric_x else all_cols
+            )
+
+        # Axe Y
+        y_col = None
+        if needs_y:
+            y_col = st.selectbox("Axe Y", numeric_cols)
+
+        # Couleur
         use_color = st.checkbox("Ajouter une dimension couleur")
         color_col = None
-        if use_color:
-            cat_cols = df.select_dtypes(include=['object']).columns.tolist()
-            color_col = st.selectbox("Colonne de couleur", cat_cols)
+        if use_color and chart_type != "Heatmap (Matrice de corrélation)":
+            color_col = st.selectbox(
+                "Colonne de couleur",
+                categorical_cols + numeric_cols
+            )
+
+        # Taille
+        size_col = None
+        if chart_type == "Bubble Chart":
+            use_size = st.checkbox("Ajouter une dimension taille", value=True)
+            if use_size:
+                size_col = st.selectbox("Colonne de taille", numeric_cols)
 
         st.markdown("---")
-        if 'region' in df.columns:
+
+        # Filtres
+        if "region" in df.columns:
             filter_region = st.multiselect(
-                "Filtrer par régions",
-                options=sorted(df['region'].unique()),
+                "🗺️ Filtrer par régions",
+                options=sorted(df["region"].unique()),
                 default=[]
             )
         else:
             filter_region = []
 
-        generate_viz = st.button("🎨 Générer le graphique", use_container_width=True)
+        # Filtre date
+        if "date" in df.columns:
+            use_date_filter = st.checkbox("📅 Filtrer par période")
+            if use_date_filter:
+                min_date = df["date"].min()
+                max_date = df["date"].max()
+
+                date_range = st.date_input(
+                    "Sélectionner la période",
+                    value=(min_date, max_date),
+                    min_value=min_date,
+                    max_value=max_date
+                )
+
+        generate_viz = st.button(
+            "🎨 Générer le graphique",
+            use_container_width=True,
+            type="primary"
+        )
 
     with col2:
         st.subheader("📊 Résultat")
 
         if generate_viz:
             df_viz = df.copy()
-            if filter_region and 'region' in df.columns:
-                df_viz = df_viz[df_viz['region'].isin(filter_region)]
 
-            fig = plot_custom_visualization(df_viz, chart_type, x_col, y_col, color_col)
+            # Filtres
+            if filter_region and "region" in df.columns:
+                df_viz = df_viz[df_viz["region"].isin(filter_region)]
 
-            if fig:
-                st.plotly_chart(fig, use_container_width=True)
-                st.download_button(
-                    "💾 Télécharger (HTML)",
-                    data=fig.to_html(),
-                    file_name=f"chart_{chart_type.lower()}_{x_col}.html",
-                    mime="text/html"
-                )
+            if "date" in df.columns and use_date_filter and len(date_range) == 2:
+                df_viz = df_viz[
+                    (df_viz["date"] >= pd.to_datetime(date_range[0])) &
+                    (df_viz["date"] <= pd.to_datetime(date_range[1]))
+                ]
+
+            # Vérification
+            if len(df_viz) == 0:
+                st.warning("⚠️ Aucune donnée après application des filtres.")
             else:
-                st.warning("⚠️ Impossible de créer le graphique avec ces paramètres.")
+                st.info(f"📊 Graphique généré avec {len(df_viz):,} enregistrements")
+
+                fig = plot_custom_visualization(
+                    df_viz, chart_type, x_col, y_col, color_col, size_col
+                )
+
+                if fig:
+                    st.plotly_chart(fig, use_container_width=True)
+
+                    # Stats
+                    with st.expander("📈 Statistiques du graphique"):
+                        if y_col and y_col in df_viz.columns:
+                            col_a, col_b, col_c = st.columns(3)
+
+                            with col_a:
+                                st.metric("Moyenne", f"{df_viz[y_col].mean():.2f}")
+                            with col_b:
+                                st.metric("Médiane", f"{df_viz[y_col].median():.2f}")
+                            with col_c:
+                                st.metric("Écart-type", f"{df_viz[y_col].std():.2f}")
+
+                    # Téléchargement
+                    col_dl1, col_dl2 = st.columns(2)
+
+                    with col_dl1:
+                        st.download_button(
+                            "💾 Télécharger (HTML)",
+                            data=fig.to_html(),
+                            file_name=f"chart_{chart_type.lower().replace(' ', '_')}_{x_col}.html",
+                            mime="text/html",
+                            use_container_width=True
+                        )
+
+                    with col_dl2:
+                        try:
+                            img_bytes = fig.to_image(format="png")
+
+                            st.download_button(
+                                "🖼️ Télécharger (PNG)",
+                                data=img_bytes,
+                                file_name=f"chart_{chart_type.lower().replace(' ', '_')}.png",
+                                mime="image/png",
+                                use_container_width=True
+                            )
+                        except:
+                            st.caption("⚠️ Export PNG indisponible (installer kaleido)")
+                else:
+                    st.error("❌ Impossible de créer le graphique avec ces paramètres.")
+
         else:
             st.info("👈 Configurez votre graphique et cliquez sur 'Générer'")
 
+            with st.expander("💡 Exemples de visualisations"):
+                st.markdown("""
+                **Suggestions selon vos besoins :**
+
+                - **Comparer des valeurs** → Barre, Barre groupée
+                - **Montrer une évolution** → Ligne, Area Chart
+                - **Voir des proportions** → Camembert, Treemap, Donut
+                - **Analyser une distribution** → Histogramme, Box Plot, Violin
+                - **Trouver des corrélations** → Scatter, Heatmap
+                - **Identifier des tendances** → Scatter avec tendance
+                - **Comparer plusieurs dimensions** → Bubble Chart, Parallel Coordinates
+                - **Visualiser des flux** → Waterfall, Funnel, Sunburst
+                """)
 # ═══════════════════════════════════════════════════════════════════════
 # PAGE : 🌦️ ANALYSE MÉTÉO
 # ═══════════════════════════════════════════════════════════════════════
