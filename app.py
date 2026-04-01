@@ -1032,7 +1032,7 @@ elif page == "⚙️ Paramètres":
 # ═══════════════════════════════════════════════════════════════════════
 # HELPER : GÉNÉRATION INTELLIGENTE DE GRAPHIQUES
 # ═══════════════════════════════════════════════════════════════════════
-
+@tools
 def _generate_smart_chart(question: str, df: pd.DataFrame):
     """
     Génère automatiquement un graphique Plotly selon la question posée.
