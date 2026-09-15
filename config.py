@@ -19,7 +19,7 @@ class Config:
     # bien plus puissant que mistral-small pour le raisonnement sur données,
     # et disponible avec le même niveau d'API key gratuite.
     MISTRAL_API_KEY = st.secrets.get("MISTRAL_API_KEY", "")
-    MISTRAL_MODEL = "mistral-small-latest"
+    MISTRAL_MODEL = "mistral-medium-latest"
 
     # Configuration de l'app
     APP_TITLE = "🚆 Assistant IA - Analyse TER SNCF"
